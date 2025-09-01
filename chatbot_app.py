@@ -128,8 +128,6 @@ def df_to_csv_download(df, filename):
     csv = df.to_csv(index=False).encode("utf-8")
     st.download_button("Download " + filename, data=csv, file_name=filename, mime="text/csv")
 
-
-st.set_page_config(page_title="Chatbot Analytics", layout="wide")
 st.title("🤖 Chatbot Analytics Dashboard")
 
 
