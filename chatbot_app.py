@@ -14,24 +14,28 @@ st.set_page_config(page_title="Chatbot Analytics", layout="wide")
 
 st.markdown("""
 <style>
-:root { --ink:#172033; --muted:#64748b; --line:#e5eaf2; --surface:#ffffff; --canvas:#f5f7fb; }
-.stApp { background:var(--canvas); color:var(--ink); font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
+:root { --ink:var(--text-color); --muted:var(--text-color); --line:rgba(127,127,127,.24); --surface:var(--secondary-background-color); --canvas:var(--background-color); }
+.stApp { background:var(--background-color); color:var(--text-color); font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
 [data-testid="stHeader"] { background:transparent; }
-[data-testid="stSidebar"] { background:#fff; border-right:1px solid var(--line); }
+[data-testid="stSidebar"] { background:var(--secondary-background-color); border-right:1px solid var(--line); }
 [data-testid="stSidebar"] > div:first-child { padding-top:1.5rem; }
-h1,h2,h3 { font-family:Inter,ui-sans-serif,system-ui,sans-serif !important; letter-spacing:-.035em; color:var(--ink); }
+h1,h2,h3 { font-family:Inter,ui-sans-serif,system-ui,sans-serif !important; letter-spacing:-.035em; color:var(--text-color); }
 h1 { font-size:2.1rem !important; font-weight:800 !important; }
-[data-testid="stMetric"] { background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:18px 20px; box-shadow:0 3px 12px rgba(25,38,72,.035); }
-[data-testid="stMetricLabel"] { color:var(--muted); font-weight:600; }
-[data-testid="stMetricValue"] { color:var(--ink); font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-weight:700; }
-[data-testid="stTabs"] [role="tablist"] { gap:8px; border-bottom:1px solid var(--line); }
-[data-testid="stTabs"] button[role="tab"] { border-radius:10px 10px 0 0; font-weight:600; }
-div[data-testid="stPlotlyChart"], [data-testid="stDataFrame"] { background:#fff; border:1px solid var(--line); border-radius:16px; padding:8px; }
+[data-testid="stMetric"] { background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:18px 20px; box-shadow:0 3px 12px rgba(0,0,0,.08); }
+[data-testid="stMetricLabel"] { color:var(--muted); opacity:.75; font-weight:600; }
+[data-testid="stMetricValue"] { color:var(--text-color); font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-weight:700; }
+div[data-testid="stPlotlyChart"], [data-testid="stDataFrame"] { background:var(--secondary-background-color); border:1px solid var(--line); border-radius:16px; padding:8px; }
+div[data-testid="stRadio"] [role="radiogroup"] { display:flex; flex-wrap:wrap; align-items:center; gap:6px; width:fit-content; max-width:100%; padding:6px; background:var(--secondary-background-color); border:1px solid var(--line); border-radius:14px; }
+div[data-testid="stRadio"] [role="radiogroup"] label { margin:0; padding:9px 14px; border-radius:10px; cursor:pointer; transition:background .15s ease,color .15s ease; }
+div[data-testid="stRadio"] [role="radiogroup"] label > div:first-child { display:none; }
+div[data-testid="stRadio"] [role="radiogroup"] label:has(input:checked) { background:var(--primary-color); }
+div[data-testid="stRadio"] [role="radiogroup"] label:has(input:checked) * { color:#fff !important; }
+div[data-testid="stRadio"] [role="radiogroup"] label:hover:not(:has(input:checked)) { background:rgba(127,127,127,.12); }
 .hero { padding:26px 30px; margin:4px 0 22px; background:linear-gradient(120deg,#25285f 0%,#5356c9 55%,#7778ed 100%); border-radius:20px; color:#fff; box-shadow:0 14px 32px rgba(67,70,170,.18); }
 .hero-kicker { text-transform:uppercase; letter-spacing:.14em; font-size:.72rem; font-weight:700; color:#d6d8ff; margin-bottom:9px; }
 .hero-title { color:#fff; font:800 1.85rem Inter,ui-sans-serif,system-ui,sans-serif; letter-spacing:-.04em; }
 .hero-copy { color:#e7e8ff; margin-top:7px; font-size:.98rem; }
-.section-note { color:var(--muted); font-size:.9rem; margin-top:-8px; margin-bottom:18px; }
+.section-note { color:var(--muted); opacity:.78; font-size:.9rem; margin-top:-8px; margin-bottom:18px; }
 div.stButton > button, div.stDownloadButton > button { border-radius:10px; font-weight:600; }
 </style>
 """, unsafe_allow_html=True)
@@ -294,9 +298,15 @@ col9.metric("Returning Users", stats["returning_users"])
 st.markdown("---")
 
 # ---------------------- Charts ----------------------
-tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Assistant quality", "Users", "Conversation data"])
+dashboard_section = st.radio(
+    "Dashboard menu",
+    ["Overview", "Assistant quality", "Users", "Conversation data"],
+    horizontal=True,
+    label_visibility="collapsed",
+    key="dashboard_section",
+)
 
-with tab1:
+if dashboard_section == "Overview":
     st.subheader("Usage overview")
     st.caption("Conversation volume and message patterns for the selected filters.")
     c1, c2 = st.columns(2)
@@ -335,7 +345,7 @@ with tab1:
         c4.plotly_chart(fig, use_container_width=True)
 
 
-with tab2:
+elif dashboard_section == "Assistant quality":
     st.subheader("Assistant quality")
     st.caption("Response scores and the sources used by assistant messages.")
     asst = messages_df[
@@ -353,7 +363,7 @@ with tab2:
     else:
         st.info("No assistant messages with scores found.")
 
-with tab3:
+elif dashboard_section == "Users":
     st.subheader("User behavior")
     st.caption("Repeat usage and the times conversations are most active.")
     users_df = df.copy()
@@ -376,7 +386,7 @@ with tab3:
             fig = px.bar(by_wd, x="weekday", y="sessions", title="Sessions by Weekday")
             st.plotly_chart(fig, use_container_width=True)
 
-with tab4:
+elif dashboard_section == "Conversation data":
     st.subheader("Conversations")
     st.caption("Filtered conversation records. Use the download buttons to export the current view.")
     st.dataframe(df.sort_values("created_at", ascending=False), use_container_width=True, height=400)
