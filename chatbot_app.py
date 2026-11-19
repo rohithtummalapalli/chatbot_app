@@ -132,7 +132,7 @@ st.title("🤖 Chatbot Analytics Dashboard")
 
 
 # Option A: local file bundled with the app
-JSON_PATH = os.environ.get("JSON_PATH", "data/chats_new.json")
+JSON_PATH = os.environ.get("JSON_PATH", "data/chats_new(19-11-2026).json")
 
 # Option B: remote file (e.g., S3 public URL). If set, this overrides local.
 JSON_URL = os.environ.get("JSON_URL")
