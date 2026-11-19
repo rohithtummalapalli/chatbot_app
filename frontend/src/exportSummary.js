@@ -4,7 +4,6 @@ import {
   Document,
   Footer,
   Header,
-  PageNumber,
   Packer,
   Paragraph,
   ShadingType,
@@ -34,7 +33,7 @@ const borders = {
 
 function clean(value, fallback = "—") {
   if (value == null || value === "") return fallback;
-  return String(value).replace(/\s+/g, " ").trim();
+  return String(value).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, "").replace(/\s+/g, " ").trim();
 }
 
 function paragraph(text, options = {}) {
@@ -173,7 +172,7 @@ export async function exportSummaryToWord(summary) {
     sections: [{
       properties: { page: { margin: { top: 1050, right: 1220, bottom: 1050, left: 1220 } } },
       headers: { default: new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "CHATBOT ANALYTICS  •  CONFIDENTIAL", font: FONT, size: 15, bold: true, color: MUTED })] })] }) },
-      footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Great Place to Work  ·  Page ", font: FONT, size: 15, color: MUTED }), new TextRun({ children: [PageNumber.CURRENT], font: FONT, size: 15, color: MUTED })] })] }) },
+      footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Great Place to Work - Chat Summary", font: FONT, size: 15, color: MUTED })] })] }) },
       children,
     }],
   });
@@ -189,5 +188,5 @@ export async function exportSummaryToWord(summary) {
   document.body.appendChild(link);
   link.click();
   link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
