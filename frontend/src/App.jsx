@@ -6,6 +6,7 @@ const NAV_ITEMS = [
   { id: "quality", label: "Assistant quality", icon: "quality" },
   { id: "users", label: "Users", icon: "users" },
   { id: "conversations", label: "Conversations", icon: "messages" },
+  { id: "summary", label: "Chat Summary", icon: "summary" },
 ];
 
 const DATE_OPTIONS = ["All dates", "Last 7 days", "Last 30 days", "Last 90 days", "Custom range"];
@@ -17,6 +18,7 @@ function Icon({ name, size = 19 }) {
     quality: <><path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z" /><path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z" /></>,
     users: <><circle cx="9" cy="8" r="3.25" /><path d="M3.5 20v-1.4A4.6 4.6 0 0 1 8.1 14h1.8a4.6 4.6 0 0 1 4.6 4.6V20" /><path d="M16 4.9a3.2 3.2 0 0 1 0 6.2M17.2 14.2a4.5 4.5 0 0 1 3.3 4.4V20" /></>,
     messages: <><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-9.5A7.5 7.5 0 0 1 10.5 4H12a8 8 0 0 1 8 7.5Z" /><path d="M8 11h8M8 14.5h5" /></>,
+    summary: <><path d="M7 3.5h7l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 20V5a1.5 1.5 0 0 1 1-1.5Z" /><path d="M14 3.5V8h4M9 12h6M9 15h6M9 18h3" /></>,
     search: <><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.3 4.3" /></>,
     filter: <><path d="M4 5h16l-6.2 7.1v5.4l-3.6 1.8v-7.2L4 5Z" /></>,
     calendar: <><rect x="3.5" y="5" width="17" height="15.5" rx="2" /><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9.5h17" /></>,
@@ -255,6 +257,42 @@ function ConversationDrawer({ conversation, onClose }) {
   );
 }
 
+function SummaryReport({ summary }) {
+  if (!summary) return null;
+  const report = summary.report || {};
+  const categories = Array.isArray(report.categories) ? report.categories : [];
+  const priorities = Array.isArray(report.priorities) ? report.priorities : [];
+  const lowConfidenceThemes = Array.isArray(report.lowConfidenceThemes) ? report.lowConfidenceThemes : [];
+  return <div className="summary-report">
+    <section className="summary-report-intro"><div className="summary-report-meta"><span>{summary.startDate} to {summary.endDate}</span><span>{summary.language}</span><span>{Number(summary.conversationCount || 0).toLocaleString()} conversations</span><span>{Number(summary.lowConfidenceCount || 0).toLocaleString()} low confidence conversations</span></div><p>{report.executiveSummary || "No executive summary was returned."}</p></section>
+    <section className="summary-results-grid">
+      <article className="summary-result-card"><div className="summary-section-heading"><div><h3>Conversation categories</h3><p>One primary category per conversation.</p></div></div>
+        {categories.length ? <div className="summary-category-list">{categories.map((category, index) => <div className="summary-category" key={`${category.name}-${index}`}><div className="summary-category-head"><strong>{category.name}</strong><span>{Number(category.count || 0).toLocaleString()} <small>({Number(category.share || 0)}%)</small></span></div>{Array.isArray(category.topics) && category.topics.length > 0 && <div className="summary-topic-list">{category.topics.slice(0, 5).map((topic, topicIndex) => <span key={`${topic.name}-${topicIndex}`}>{topic.name}<b>{topic.count}</b></span>)}</div>}</div>)}</div> : <p className="summary-muted">No category breakdown available.</p>}
+      </article>
+      <article className="summary-result-card"><div className="summary-section-heading"><div><h3>Where to focus</h3><p>Priorities based on volume and answer review signals.</p></div></div>
+        {priorities.length ? <div className="summary-priority-list">{priorities.map((priority, index) => <article className="summary-priority" key={`${priority.title}-${index}`}><div><span className={`summary-priority-tag priority-${String(priority.priority || "monitor").toLowerCase()}`}>{priority.priority || "Monitor"}</span><strong>{priority.title}</strong></div><p>{priority.evidence}</p><p><b>Suggested action:</b> {priority.recommendation}</p></article>)}</div> : <p className="summary-muted">No improvement priorities were returned.</p>}
+      </article>
+      <article className="summary-result-card summary-wide"><div className="summary-section-heading"><div><h3>Low confidence themes</h3><p>Conversations containing an assistant response in the lowest score decile.</p></div></div>
+        {lowConfidenceThemes.length ? <div className="summary-low-confidence-list">{lowConfidenceThemes.map((theme, index) => <article key={`${theme.theme}-${index}`}><div><strong>{theme.theme}</strong><span>{Number(theme.count || 0).toLocaleString()} conversations</span></div><p>{theme.likelyGap}</p><p><b>Improvement:</b> {theme.improvement}</p></article>)}</div> : <p className="summary-muted">No distinct low confidence themes were identified.</p>}
+      </article>
+    </section>
+    {Array.isArray(report.limitations) && report.limitations.length > 0 && <p className="summary-limitations"><strong>Reading this report:</strong> {report.limitations.join(" ")}</p>}
+    <p className="summary-created">Saved {summary.createdAt ? new Date(summary.createdAt).toLocaleString() : ""}. Chat text is not stored with the report.</p>
+  </div>;
+}
+
+function DashboardLogin({ password, setPassword, onSubmit, busy, error }) {
+  return <main className="login-screen"><form className="login-card" onSubmit={onSubmit}>
+    <img className="login-logo" src={gptwLogo} alt="Great Place to Work" />
+    <p className="eyebrow">PRIVATE DASHBOARD</p><h1>Sign in to Chatbot Analytics</h1>
+    <p className="login-copy">Enter the shared dashboard password to view analytics and conversations.</p>
+    <label className="login-password-label">Dashboard password<input autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoFocus /></label>
+    {error && <p className="login-error" role="alert">{error}</p>}
+    <button className="login-submit" type="submit" disabled={busy || !password}>{busy ? "Signing in…" : "Sign in"}</button>
+    <p className="login-security-note">Your session expires after 8 hours.</p>
+  </form></main>;
+}
+
 function App() {
   const [conversations, setConversations] = useState([]);
   const [loadState, setLoadState] = useState("loading");
@@ -265,6 +303,19 @@ function App() {
   const [semanticResult, setSemanticResult] = useState(null);
   const [semanticStatus, setSemanticStatus] = useState("");
   const [semanticLoading, setSemanticLoading] = useState(false);
+  const [summaryStart, setSummaryStart] = useState("");
+  const [summaryEnd, setSummaryEnd] = useState("");
+  const [summaryLanguage, setSummaryLanguage] = useState("English");
+  const [summaryLanguageOther, setSummaryLanguageOther] = useState("");
+  const [savedSummaries, setSavedSummaries] = useState([]);
+  const [activeSummary, setActiveSummary] = useState(null);
+  const [summaryStatus, setSummaryStatus] = useState("");
+  const [summaryBusy, setSummaryBusy] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginBusy, setLoginBusy] = useState(false);
   const semanticRequestId = useRef(0);
   const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem("chatbot-theme") === "dark");
   const [filtersOpen, setFiltersOpen] = useState(true);
@@ -288,7 +339,48 @@ function App() {
   });
 
   useEffect(() => {
-    fetch(`${import.meta.env.BASE_URL}data/conversations.json`)
+    fetch("/api/session", { credentials: "same-origin" })
+      .then((response) => {
+        return response.json().then((result) => {
+          if (!response.ok) throw new Error(result.error || "Could not check dashboard access.");
+          setAuthenticated(Boolean(result.authenticated));
+          if (result.authenticated) setAuthChecked(true);
+          else setAuthChecked(true);
+        });
+      })
+      .catch((authError) => {
+        setLoginError(authError.message);
+        setAuthChecked(true);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!authenticated) return undefined;
+    const interval = window.setInterval(async () => {
+      try {
+        const response = await fetch("/api/session", { credentials: "same-origin", cache: "no-store" });
+        const result = await response.json();
+        if (!response.ok || !result.authenticated) {
+          setAuthenticated(false);
+          setConversations([]);
+          setSavedSummaries([]);
+          setActiveSummary(null);
+          setLoginError("Your session expired. Sign in again to continue.");
+        }
+      } catch {
+        setAuthenticated(false);
+        setConversations([]);
+        setSavedSummaries([]);
+        setActiveSummary(null);
+        setLoginError("Could not verify your session. Sign in again to continue.");
+      }
+    }, 60_000);
+    return () => window.clearInterval(interval);
+  }, [authenticated]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    fetch("/data/conversations.json", { credentials: "same-origin", cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error(`Could not load conversation data (${response.status}).`);
         return response.json();
@@ -301,7 +393,26 @@ function App() {
         setError(loadError.message);
         setLoadState("error");
       });
-  }, []);
+  }, [authenticated]);
+
+  useEffect(() => {
+    if (!minDate || !maxDate) return;
+    const latest = new Date(`${maxDate}T00:00:00Z`);
+    latest.setUTCDate(latest.getUTCDate() - 29);
+    setSummaryStart(latest.toISOString().slice(0, 10) < minDate ? minDate : latest.toISOString().slice(0, 10));
+    setSummaryEnd(maxDate);
+  }, [minDate, maxDate]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    fetch("/api/chat-summary")
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not load saved summaries.");
+        setSavedSummaries(result.summaries || []);
+      })
+      .catch((summaryError) => setSummaryStatus(summaryError.message));
+  }, [authenticated]);
 
   useEffect(() => {
     window.localStorage.setItem("chatbot-theme", darkMode ? "dark" : "light");
@@ -519,6 +630,119 @@ function App() {
     setTextSearchQuery("");
   }
 
+  async function loadSavedSummary(item) {
+    setSummaryBusy(true);
+    setSummaryStatus("Loading saved summary…");
+    try {
+      const response = await fetch("/api/chat-summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "lookup", startDate: item.startDate, endDate: item.endDate, language: item.language }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not open this summary.");
+      setActiveSummary(result.summary);
+      setSummaryStart(item.startDate);
+      setSummaryEnd(item.endDate);
+      const supportedLanguages = ["English", "German", "French", "Spanish", "Italian", "Portuguese", "Dutch", "Polish", "Turkish"];
+      setSummaryLanguage(supportedLanguages.includes(item.language) ? item.language : "Other (enter below)");
+      setSummaryLanguageOther(supportedLanguages.includes(item.language) ? "" : item.language);
+      setSummaryStatus("");
+    } catch (summaryError) {
+      setSummaryStatus(summaryError.message);
+    } finally {
+      setSummaryBusy(false);
+    }
+  }
+
+  async function signIn(event) {
+    event.preventDefault();
+    setLoginBusy(true);
+    setLoginError("");
+    try {
+      const response = await fetch("/api/session", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "login", password: loginPassword }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not sign in.");
+      setLoginPassword("");
+      setAuthenticated(true);
+      setAuthChecked(true);
+    } catch (authError) {
+      setLoginError(authError.message || "Could not sign in.");
+    } finally {
+      setLoginBusy(false);
+    }
+  }
+
+  async function signOut() {
+    try { await fetch("/api/session", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "logout" }) }); }
+    catch { /* Clear the local dashboard view even if the logout request cannot reach Pages. */ }
+    finally {
+      setAuthenticated(false);
+      setConversations([]);
+      setSavedSummaries([]);
+      setActiveSummary(null);
+      setLoadState("loading");
+      setSection("overview");
+    }
+  }
+
+  async function generateChatSummary() {
+    if (!summaryStart || !summaryEnd || summaryStart > summaryEnd) {
+      setSummaryStatus("Choose a valid start and end date.");
+      return;
+    }
+    const selected = conversations.filter((conversation) => displayValue(conversation.source).toLowerCase() === "chat bubble/iframe" && conversation.dateKey >= summaryStart && conversation.dateKey <= summaryEnd);
+    if (!selected.length) {
+      setSummaryStatus("No Chat Bubble/Iframe conversations were found in this date range.");
+      return;
+    }
+    const reportLanguage = summaryLanguage === "Other (enter below)" ? summaryLanguageOther.trim() : summaryLanguage;
+    if (!reportLanguage || reportLanguage.length > 40) {
+      setSummaryStatus("Enter a report language between 2 and 40 characters.");
+      return;
+    }
+    setSummaryBusy(true);
+    setActiveSummary(null);
+    try {
+      const lookup = await fetch("/api/chat-summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "lookup", startDate: summaryStart, endDate: summaryEnd, language: reportLanguage }) });
+      const existing = await lookup.json();
+      if (lookup.ok && existing.summary) {
+        setActiveSummary(existing.summary);
+        setSummaryStatus("An existing report for this date range and language was opened.");
+        return;
+      }
+
+      const scores = selected.flatMap((conversation) => conversation.messages.filter((message) => message.role === "assistant").map((message) => confidenceScorePercent(message.score)).filter((score) => score != null)).sort((a, b) => a - b);
+      const cutoff = scores.length ? scores[Math.max(0, Math.ceil(scores.length * 0.1) - 1)] : null;
+      const payload = selected.map((conversation) => {
+        const messages = conversation.messages.filter((message) => ["user", "assistant"].includes(message.role) && typeof message.content === "string");
+        const isLowConfidence = cutoff != null && messages.some((message) => message.role === "assistant" && confidenceScorePercent(message.score) != null && confidenceScorePercent(message.score) <= cutoff);
+        return { id: String(conversation.id), lowConfidence: isLowConfidence, messages: messages.map(({ role, content, score }) => ({ role, content, score })) };
+      });
+      const classifications = [];
+      const batchSize = 25;
+      for (let start = 0; start < payload.length; start += batchSize) {
+        const batch = payload.slice(start, start + batchSize);
+        const index = Math.floor(start / batchSize) + 1;
+        const total = Math.ceil(payload.length / batchSize);
+        setSummaryStatus(`Analysing conversations ${Math.min(start + batch.length, payload.length).toLocaleString()} of ${payload.length.toLocaleString()} (batch ${index} of ${total})…`);
+        const response = await fetch("/api/chat-summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "classify", startDate: summaryStart, endDate: summaryEnd, language: reportLanguage, conversations: batch }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Conversation analysis failed.");
+        classifications.push(...result.items);
+      }
+      setSummaryStatus("Writing and saving the report…");
+      const response = await fetch("/api/chat-summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "finalize", startDate: summaryStart, endDate: summaryEnd, language: reportLanguage, classifications }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not write the report.");
+      setActiveSummary(result.summary);
+      setSavedSummaries((current) => [result.summary, ...current.filter((item) => item.id !== result.summary.id)].slice(0, 50));
+      setSummaryStatus("Summary generated and saved. You can reopen it from saved reports.");
+    } catch (summaryError) {
+      setSummaryStatus(summaryError.message || "Chat summary generation failed.");
+    } finally {
+      setSummaryBusy(false);
+    }
+  }
+
+  if (!authChecked) return <div className="loading-screen"><span className="loading-mark">CA</span><div className="loading-spinner" /><p>Checking dashboard access…</p></div>;
+  if (!authenticated) return <DashboardLogin password={loginPassword} setPassword={setLoginPassword} onSubmit={signIn} busy={loginBusy} error={loginError} />;
   if (loadState === "loading") return <div className="loading-screen"><span className="loading-mark">CA</span><div className="loading-spinner" /><p>Preparing your analytics…</p></div>;
   if (loadState === "error") return <div className="error-screen"><span className="loading-mark">CA</span><h1>We couldn’t load the conversation export</h1><p>{error}</p><p>Make sure the build copied the JSON file into <code>public/data/conversations.json</code>.</p></div>;
 
@@ -543,16 +767,16 @@ function App() {
       <div className="main-shell">
         <header className="topbar">
           <div className="topbar-context"><span className="topbar-kicker">WORKSPACE</span><span className="topbar-separator">/</span><span>GPTW Demo Test</span></div>
-          <div className="topbar-right"><span className="data-live"><span className="status-dot" /> Updated from export</span><button className="mobile-theme-button" onClick={() => setDarkMode((value) => !value)} aria-label="Toggle color theme"><Icon name={darkMode ? "sun" : "moon"} size={18} /></button></div>
+          <div className="topbar-right"><span className="data-live"><span className="status-dot" /> Updated from export</span><button className="sign-out-button" onClick={signOut}>Sign out</button><button className="mobile-theme-button" onClick={() => setDarkMode((value) => !value)} aria-label="Toggle color theme"><Icon name={darkMode ? "sun" : "moon"} size={18} /></button></div>
         </header>
 
         <main className="page-content">
           <section className="page-heading">
-            <div><p className="eyebrow">ANALYTICS</p><h1>{title}</h1><p className="page-subtitle">Understand engagement, response quality, and how people use your chatbot.</p></div>
+            <div><p className="eyebrow">ANALYTICS</p><h1>{title}</h1><p className="page-subtitle">{section === "summary" ? "Review recurring needs, answer quality signals, and practical improvement priorities." : "Understand engagement, response quality, and how people use your chatbot."}</p></div>
             <div className="heading-meta"><span className="source-indicator" /><span>GPTW Demo Test</span></div>
           </section>
 
-          <section className="filter-panel" aria-label="Dashboard filters">
+          {section !== "summary" && <section className="filter-panel" aria-label="Dashboard filters">
             <div className="filter-toolbar">
               <div className="search-field"><Icon name="search" size={19} /><input value={filters.search} onChange={(event) => { semanticRequestId.current += 1; setSemanticLoading(false); setSemanticResult(null); setSemanticStatus(""); updateFilter("search", event.target.value); }} onKeyDown={(event) => event.key === "Enter" && (searchMode === "semantic" ? runSemanticSearch() : applyTextSearch())} placeholder={searchMode === "semantic" ? "Search by meaning in any language…" : "Search conversations or messages…"} aria-label="Search conversations or messages" />{filters.search && <button onClick={() => { semanticRequestId.current += 1; setSemanticLoading(false); updateFilter("search", ""); setSemanticResult(null); setSemanticStatus(""); setTextSearchQuery(""); }} aria-label="Clear search"><Icon name="close" size={16} /></button>}</div>
               <div className="search-mode-group" role="group" aria-label="Search mode"><button className={searchMode === "text" ? "active" : ""} onClick={() => { setSearchMode("text"); applyTextSearch(); }}>Text</button><button className={searchMode === "semantic" ? "active" : ""} onClick={() => setSearchMode("semantic")}>Semantic</button></div>
@@ -574,7 +798,7 @@ function App() {
               <button className="reset-filters" onClick={resetFilters}>Reset filters</button>
             </div>}
             <div className="result-line"><span>Showing <strong>{filtered.length.toLocaleString()}</strong> of {conversations.length.toLocaleString()} conversations</span>{(filters.search || filters.country !== "All countries" || filters.source !== "All sources" || filters.chatbot !== "All chatbots" || filters.sentiment !== "All sentiments" || filters.segment !== "All users" || filters.form !== "All submissions" || filters.date !== "All dates" || filters.minMessages !== "Any" || filters.scoreMin !== "" || filters.scoreMax !== "") && <button onClick={resetFilters}>Clear all</button>}</div>
-          </section>
+          </section>}
 
           {section === "overview" && <>
             <section className="metrics-grid">
@@ -631,6 +855,29 @@ function App() {
             </tbody></table></div>
             <div className="table-footer"><span>{filtered.length ? `Showing ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, filtered.length)} of ${filtered.length.toLocaleString()}` : "No results"}</span><div><button disabled={page === 0} onClick={() => setPage((value) => Math.max(0, value - 1))}>Previous</button><button disabled={(page + 1) * pageSize >= filtered.length} onClick={() => setPage((value) => value + 1)}>Next</button></div></div>
             <div className="messages-export"><div><h3>Messages</h3><p>{visibleMessages.length.toLocaleString()} messages in the selected conversations</p></div><button className="secondary-button" onClick={() => downloadCsv(visibleMessages, [["conversationId", "Conversation ID"], ["role", "Role"], ["type", "Type"], ["content", "Content"], ["source", "Assistant source"], ["score", "Score"]], "messages.csv")}><Icon name="download" size={16} /> Export messages</button></div>
+          </section>}
+
+          {section === "summary" && <section className="summary-page">
+            <div className="summary-layout">
+              <div className="summary-main-column">
+                <section className="summary-controls card-surface">
+                  <div className="summary-section-heading"><div><h2>Generate a chat summary</h2><p>Analyse Chat Bubble/Iframe conversations in this date range.</p></div><span className="summary-scope-pill">Chat Bubble/Iframe</span></div>
+                  <div className="summary-form-row">
+                    <label className="summary-date-field">Start date<input type="date" min={minDate} max={maxDate} value={summaryStart} onChange={(event) => { setSummaryStart(event.target.value); setActiveSummary(null); }} /></label>
+                    <label className="summary-date-field">End date<input type="date" min={minDate} max={maxDate} value={summaryEnd} onChange={(event) => { setSummaryEnd(event.target.value); setActiveSummary(null); }} /></label>
+                    <label className="summary-language-field">Report language<select value={summaryLanguage} onChange={(event) => { setSummaryLanguage(event.target.value); setActiveSummary(null); }}><option>English</option><option>German</option><option>French</option><option>Spanish</option><option>Italian</option><option>Portuguese</option><option>Dutch</option><option>Polish</option><option>Turkish</option><option>Other (enter below)</option></select></label>
+                    {summaryLanguage === "Other (enter below)" && <label className="summary-language-field">Language name<input type="text" value={summaryLanguageOther} placeholder="e.g. Japanese" maxLength={40} onChange={(event) => setSummaryLanguageOther(event.target.value)} /></label>}
+                    <button className="summary-generate-button" onClick={generateChatSummary} disabled={summaryBusy}>{summaryBusy && <span className="search-spinner" />}{summaryBusy ? "Generating…" : activeSummary ? "Open or generate" : "Generate summary"}</button>
+                  </div>
+                  <p className="summary-explainer">The report groups similar customer needs, counts categories, suggests high impact improvements, and reviews chats containing responses in the lowest confidence score decile. Chat text is sent to your Azure OpenAI deployment for analysis; only the finished report and date range are saved in D1.</p>
+                  {summaryStatus && <p className={`summary-status ${summaryStatus.includes("could not") || summaryStatus.includes("failed") || summaryStatus.includes("not configured") || summaryStatus.includes("No Chat") || summaryStatus.includes("Choose") ? "has-error" : ""}`} role="status">{summaryStatus}</p>}
+                </section>
+                {activeSummary ? <SummaryReport summary={activeSummary} /> : !summaryBusy && <section className="summary-empty card-surface"><span className="summary-empty-mark"><Icon name="summary" size={23} /></span><h3>Your summary will appear here</h3><p>Choose a date range and report language, then generate the report.</p></section>}
+              </div>
+              <aside className="saved-summary-panel card-surface"><div className="summary-section-heading"><div><h2>Saved reports</h2><p>Reopen a report without another AI run.</p></div><span className="saved-summary-count">{savedSummaries.length}</span></div>
+                {savedSummaries.length ? <div className="saved-summary-list">{savedSummaries.map((item) => <button key={item.id} className={`saved-summary-item ${activeSummary?.id === item.id ? "selected" : ""}`} onClick={() => loadSavedSummary(item)} disabled={summaryBusy}><strong>{item.startDate} – {item.endDate}</strong><span>{item.language} · {Number(item.conversationCount).toLocaleString()} conversations</span><small>{new Date(item.createdAt).toLocaleDateString()}</small></button>)}</div> : <p className="summary-muted">{summaryStatus.includes("not configured") ? "Connect D1 to load reports." : "No saved reports yet."}</p>}
+              </aside>
+            </div>
           </section>}
 
           <footer className="page-footer">Chatbot analytics <span>·</span> Filtered views update across charts and exports</footer>
