@@ -269,7 +269,7 @@ function App() {
     from: "",
     to: "",
     country: "All countries",
-    source: "All sources",
+    source: "Chat Bubble/Iframe",
     chatbot: "All chatbots",
     sentiment: "All sentiments",
     segment: "All users",
@@ -333,7 +333,10 @@ function App() {
         body: JSON.stringify({ query: normalizedQuery, documents }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Semantic search failed.");
+      if (!response.ok) {
+        const details = typeof result.details === "string" ? result.details.trim() : "";
+        throw new Error([result.error || "Semantic search failed.", details].filter(Boolean).join(" "));
+      }
       if (requestId !== semanticRequestId.current) return;
       setSemanticResult({ query: normalizedQuery, matches: result.matches || [] });
       setSemanticStatus(`Found ${result.matches?.length || 0} matching conversations.`);
@@ -485,7 +488,7 @@ function App() {
   function resetFilters() {
     semanticRequestId.current += 1;
     setSemanticLoading(false);
-    setFilters({ search: "", date: "All dates", from: "", to: "", country: "All countries", source: "All sources", chatbot: "All chatbots", sentiment: "All sentiments", segment: "All users", form: "All submissions", minMessages: "Any" });
+    setFilters({ search: "", date: "All dates", from: "", to: "", country: "All countries", source: "Chat Bubble/Iframe", chatbot: "All chatbots", sentiment: "All sentiments", segment: "All users", form: "All submissions", minMessages: "Any" });
     setSemanticResult(null);
     setSemanticStatus("");
     setTextSearchQuery("");

@@ -61,6 +61,12 @@ export async function onRequestPost({ request, env }) {
     return Response.json({ matches });
   } catch (error) {
     console.error("Workers AI semantic search failed", error);
-    return Response.json({ error: "Multilingual search could not reach the language model. Try again shortly." }, { status: 502 });
+    const details = String(error?.message || error || "Unknown Workers AI error")
+      .replace(/\s+/g, " ")
+      .slice(0, 240);
+    return Response.json({
+      error: "Multilingual search could not reach the language model. Try again shortly.",
+      details: `Cloudflare AI: ${details}`,
+    }, { status: 502 });
   }
 }
