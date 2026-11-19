@@ -7,9 +7,53 @@ const NAV_ITEMS = [
   { id: "users", label: "Users", icon: "users" },
   { id: "conversations", label: "Conversations", icon: "messages" },
   { id: "summary", label: "Chat Summary", icon: "summary" },
+  { id: "glossary", label: "Glossary", icon: "glossary" },
 ];
 
 const DATE_OPTIONS = ["All dates", "Last 7 days", "Last 30 days", "Last 90 days", "Custom range"];
+
+const GLOSSARY_GROUPS = [
+  {
+    title: "Conversation activity",
+    terms: [
+      { term: "Sessions", definition: "The number of conversations in the current dashboard view. A session is one conversation record in the source data.", calculation: "Count of conversations remaining after the active date and dashboard filters.", note: "A session is not necessarily a unique person. One person can have multiple sessions." },
+      { term: "Total messages", definition: "The number of user and assistant messages across the selected sessions.", calculation: "User messages + assistant messages. Messages with other roles are not included.", note: "This is a total, not the number of back-and-forth exchanges." },
+      { term: "Average messages per session", definition: "The average conversation length measured in messages.", calculation: "Total user and assistant messages divided by the number of sessions.", note: "Both user and assistant messages count. Empty or unusually short sessions can lower the average." },
+      { term: "Engagement rate", definition: "The share of sessions where the user sent at least two messages.", calculation: "Sessions with 2+ user messages ÷ all sessions × 100.", note: "This is a message-count definition of engagement. It does not measure time spent, satisfaction, or whether the user’s issue was resolved." },
+      { term: "Bounce rate", definition: "The share of sessions containing exactly one user message.", calculation: "Sessions with exactly 1 user message ÷ all sessions × 100.", note: "A one-message session is not automatically a failed interaction; the user may have received the information they needed." },
+      { term: "Median session duration", definition: "The middle conversation duration after sorting eligible sessions from shortest to longest. Half are shorter and half are longer (or equal).", calculation: "For each session, last-message time minus conversation start time; then take the median.", note: "Sessions without valid timestamps and sessions longer than 24 hours are excluded. The duration can include idle time, so it is not active engagement time." },
+      { term: "P90 session duration", definition: "A high-end duration reference: about 90% of eligible sessions are at or below this value.", calculation: "The dashboard selects the value near the 90th percentile from valid session durations.", note: "Like the median, it measures elapsed time between the first and last message and excludes sessions longer than 24 hours." },
+    ],
+  },
+  {
+    title: "Users",
+    terms: [
+      { term: "Unique users", definition: "The number of distinct identifiable users represented by the selected sessions.", calculation: "Each session uses the first available ID in this order: analytics user ID, user ID, then anonymous ID. Distinct IDs are counted once.", note: "Sessions with no user identifier are not counted. If the same person receives different IDs, they may appear as separate users." },
+      { term: "New users", definition: "Identified users who have exactly one session in the current filtered selection.", calculation: "Count of user IDs associated with one selected session.", note: "“New” means one session in this view, not necessarily a person’s first-ever visit." },
+      { term: "Returning users", definition: "Identified users associated with more than one session in the current filtered selection.", calculation: "Count of user IDs associated with two or more selected sessions.", note: "This is based on the selected date range and filters, not necessarily the user’s full history." },
+      { term: "Sessions per user", definition: "The distribution of identified users by how many selected sessions they had.", calculation: "Users are grouped into 1, 2, 3, 4, or 5+ sessions.", note: "Users without an identifier are omitted from this chart." },
+    ],
+  },
+  {
+    title: "Assistant quality",
+    terms: [
+      { term: "Confidence score", definition: "A numeric score attached to an assistant response in the source data. The dashboard displays and filters it on a 0–100 scale.", calculation: "Scores from 0 to about 1 are converted to percentages; other numeric values are treated as 0–100 and clamped to that range.", note: "The score is a model or source-system signal. A high score does not guarantee correctness, and a low score does not prove an answer is wrong." },
+      { term: "Scored responses", definition: "Assistant messages that have a usable numeric confidence score.", calculation: "Count of assistant messages with a numeric score.", note: "Unscored assistant responses are not included in the score distribution or score-range filter." },
+      { term: "Assistant score distribution", definition: "The number of scored assistant responses in each ten-point score band, from 0–10% through 90–100%.", calculation: "Each normalized score is assigned to one of ten buckets.", note: "This shows how scores are distributed; it is not an accuracy or satisfaction rating." },
+      { term: "Responses with sources", definition: "The share of assistant messages linked to at least one matched source.", calculation: "Assistant messages with one or more matched sources ÷ all assistant messages × 100.", note: "Having a source does not by itself establish that the response is correct or that the source fully supports it." },
+      { term: "Positive feedback", definition: "The share of explicitly rated assistant messages that received positive feedback.", calculation: "Positive (up) ratings ÷ all positive and negative (up/down) ratings × 100.", note: "Unrated responses are excluded. If there are no ratings, the dashboard shows no rate." },
+      { term: "Confidence score filter", definition: "Keeps conversations that contain at least one assistant response within the selected score range.", calculation: "The range is inclusive of its minimum and maximum. Scores are normalized to 0–100 first.", note: "A conversation is included if any scored assistant message matches; other messages in that conversation can have scores outside the range." },
+    ],
+  },
+  {
+    title: "Chat Summary signals",
+    terms: [
+      { term: "Low-confidence conversations", definition: "Conversations containing at least one assistant response in the lowest score decile for the selected summary period.", calculation: "The bottom 10% cutoff is calculated from scored assistant messages in the selected conversations. A conversation is flagged if any of its scored assistant responses is at or below that cutoff; ties are included.", note: "This is a review signal, not proof of an incorrect answer. Conversations without scored assistant messages cannot be flagged by this rule." },
+      { term: "Categories and topics", definition: "AI-generated groupings of customer needs found in the selected conversations. The model discovers labels from the chats; GPTW service areas are examples, not a fixed list.", calculation: "Each conversation receives one primary category and a more specific topic. Counts show how many conversations were assigned to each group.", note: "These are analytical interpretations. Similar needs can be grouped imperfectly, so review the evidence before making decisions." },
+      { term: "Low-confidence themes", definition: "AI-generated groupings of likely answer-quality gaps among low-confidence conversations.", calculation: "The model groups the flagged conversations by the issue suggested by their messages, then counts each theme.", note: "A score alone is not used to infer a gap; the conversation text must support the interpretation." },
+    ],
+  },
+];
 
 function Icon({ name, size = 19 }) {
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
@@ -19,6 +63,7 @@ function Icon({ name, size = 19 }) {
     users: <><circle cx="9" cy="8" r="3.25" /><path d="M3.5 20v-1.4A4.6 4.6 0 0 1 8.1 14h1.8a4.6 4.6 0 0 1 4.6 4.6V20" /><path d="M16 4.9a3.2 3.2 0 0 1 0 6.2M17.2 14.2a4.5 4.5 0 0 1 3.3 4.4V20" /></>,
     messages: <><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-9.5A7.5 7.5 0 0 1 10.5 4H12a8 8 0 0 1 8 7.5Z" /><path d="M8 11h8M8 14.5h5" /></>,
     summary: <><path d="M7 3.5h7l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 20V5a1.5 1.5 0 0 1 1-1.5Z" /><path d="M14 3.5V8h4M9 12h6M9 15h6M9 18h3" /></>,
+    glossary: <><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5v-16Z" /><path d="M4 5.5v16M8 7h8M8 10h8M8 15h6" /></>,
     search: <><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.3 4.3" /></>,
     filter: <><path d="M4 5h16l-6.2 7.1v5.4l-3.6 1.8v-7.2L4 5Z" /></>,
     calendar: <><rect x="3.5" y="5" width="17" height="15.5" rx="2" /><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9.5h17" /></>,
@@ -281,6 +326,24 @@ function SummaryReport({ summary, onExport, exportBusy }) {
     {Array.isArray(report.limitations) && report.limitations.length > 0 && <p className="summary-limitations"><strong>Reading this report:</strong> {report.limitations.join(" ")}</p>}
     <p className="summary-created">Saved {summary.createdAt ? new Date(summary.createdAt).toLocaleString() : ""}. Chat text is not stored with the report.</p>
   </div>;
+}
+
+function GlossaryPage() {
+  return <section className="glossary-page" aria-label="Metric glossary">
+    <div className="glossary-intro card-surface">
+      <span className="glossary-intro-mark"><Icon name="glossary" size={22} /></span>
+      <div><h2>How to read the dashboard</h2><p>Metric values update with the active dashboard filters. Unless a definition says otherwise, they describe only the conversations currently in view.</p></div>
+    </div>
+    {GLOSSARY_GROUPS.map((group) => <section className="glossary-group" key={group.title}>
+      <div className="glossary-group-heading"><h2>{group.title}</h2><span>{group.terms.length} definitions</span></div>
+      <div className="glossary-grid">{group.terms.map((item) => <article className="glossary-card card-surface" key={item.term}>
+        <h3>{item.term}</h3>
+        <p>{item.definition}</p>
+        <div className="glossary-detail"><strong>How it is calculated</strong><span>{item.calculation}</span></div>
+        <div className="glossary-note"><strong>How to interpret it</strong><span>{item.note}</span></div>
+      </article>)}</div>
+    </section>)}
+  </section>;
 }
 
 function DashboardLogin({ password, setPassword, onSubmit, busy, error }) {
@@ -824,11 +887,11 @@ function App() {
 
         <main className="page-content">
           <section className="page-heading">
-            <div><p className="eyebrow">ANALYTICS</p><h1>{title}</h1><p className="page-subtitle">{section === "summary" ? "Review recurring needs, answer quality signals, and practical improvement priorities." : "Understand engagement, response quality, and how people use your chatbot."}</p></div>
+            <div><p className="eyebrow">ANALYTICS</p><h1>{title}</h1><p className="page-subtitle">{section === "summary" ? "Review recurring needs, answer quality signals, and practical improvement priorities." : section === "glossary" ? "Clear definitions for dashboard metrics and AI-generated analysis." : "Understand engagement, response quality, and how people use your chatbot."}</p></div>
             <div className="heading-meta"><span className="source-indicator" /><span>GPTW Demo Test</span></div>
           </section>
 
-          {section !== "summary" && <section className="filter-panel" aria-label="Dashboard filters">
+          {section !== "summary" && section !== "glossary" && <section className="filter-panel" aria-label="Dashboard filters">
             <div className="filter-toolbar">
               <div className="search-field"><Icon name="search" size={19} /><input value={filters.search} onChange={(event) => { semanticRequestId.current += 1; setSemanticLoading(false); setSemanticResult(null); setSemanticStatus(""); updateFilter("search", event.target.value); }} onKeyDown={(event) => event.key === "Enter" && (searchMode === "semantic" ? runSemanticSearch() : applyTextSearch())} placeholder={searchMode === "semantic" ? "Search by meaning in any language…" : "Search conversations or messages…"} aria-label="Search conversations or messages" />{filters.search && <button onClick={() => { semanticRequestId.current += 1; setSemanticLoading(false); updateFilter("search", ""); setSemanticResult(null); setSemanticStatus(""); setTextSearchQuery(""); }} aria-label="Clear search"><Icon name="close" size={16} /></button>}</div>
               <div className="search-mode-group" role="group" aria-label="Search mode"><button className={searchMode === "text" ? "active" : ""} onClick={() => { setSearchMode("text"); applyTextSearch(); }}>Text</button><button className={searchMode === "semantic" ? "active" : ""} onClick={() => setSearchMode("semantic")}>Semantic</button></div>
@@ -931,6 +994,8 @@ function App() {
               </aside>
             </div>
           </section>}
+
+          {section === "glossary" && <GlossaryPage />}
 
           <footer className="page-footer">Chatbot analytics <span>·</span> Filtered views update across charts and exports</footer>
         </main>
