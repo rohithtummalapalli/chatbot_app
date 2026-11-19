@@ -338,6 +338,9 @@ function App() {
     scoreMax: "",
   });
 
+  const maxDate = useMemo(() => conversations.reduce((max, item) => item.dateKey && item.dateKey > max ? item.dateKey : max, ""), [conversations]);
+  const minDate = useMemo(() => conversations.reduce((min, item) => item.dateKey && (!min || item.dateKey < min) ? item.dateKey : min, ""), [conversations]);
+
   useEffect(() => {
     fetch("/api/session", { credentials: "same-origin" })
       .then((response) => {
@@ -424,9 +427,6 @@ function App() {
     chatbots: [...new Set(conversations.map((item) => item.chatbot_id).filter(Boolean).map(displayValue))].sort(),
     sentiments: [...new Set(conversations.map((item) => item.sentiment).filter(Boolean).map(displayValue))].sort(),
   }), [conversations]);
-
-  const maxDate = useMemo(() => conversations.reduce((max, item) => item.dateKey && item.dateKey > max ? item.dateKey : max, ""), [conversations]);
-  const minDate = useMemo(() => conversations.reduce((min, item) => item.dateKey && (!min || item.dateKey < min) ? item.dateKey : min, ""), [conversations]);
 
   async function runSemanticSearch(query = filters.search) {
     const normalizedQuery = query.trim();
