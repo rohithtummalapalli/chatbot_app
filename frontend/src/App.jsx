@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const NAV_ITEMS = [
   { id: "overview", label: "Overview", icon: "overview" },
@@ -42,7 +42,7 @@ function hasSubmission(value) {
 }
 
 function conversationUserKey(conversation) {
-  return conversation.user_id || conversation.anonymous_id || null;
+  return conversation.analytics_user_id || conversation.user_id || conversation.anonymous_id || null;
 }
 
 function normalizeConversations(raw) {
@@ -143,6 +143,7 @@ function EmptyChart({ text = "No data for these filters" }) {
 }
 
 function AreaChart({ data, label = "sessions" }) {
+  const [hoveredIndex, setHoveredIndex] = useState(null);
   if (!data.length) return <EmptyChart />;
   const width = 760;
   const height = 250;
@@ -161,9 +162,17 @@ function AreaChart({ data, label = "sessions" }) {
   const line = points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x},${point.y}`).join(" ");
   const area = `${line} L${points.at(-1).x},${top + plotHeight} L${points[0].x},${top + plotHeight} Z`;
   const labels = [points[0], points[Math.floor((points.length - 1) / 2)], points.at(-1)];
+  const activePoint = hoveredIndex == null ? null : points[hoveredIndex];
+  function setPointFromPointer(event) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const chartX = ((event.clientX - rect.left) / rect.width) * width;
+    const relativeX = Math.max(0, Math.min(plotWidth, chartX - left));
+    const nextIndex = data.length === 1 ? 0 : Math.round((relativeX / plotWidth) * (points.length - 1));
+    setHoveredIndex(nextIndex);
+  }
   return (
-    <div className="area-chart-wrap">
-      <svg className="area-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${label} over time`}>
+    <div className="area-chart-wrap" onPointerLeave={() => setHoveredIndex(null)}>
+      <svg className="area-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${label} over time`} onPointerMove={setPointFromPointer}>
         <defs><linearGradient id="areaFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="var(--accent)" stopOpacity=".22" /><stop offset="100%" stopColor="var(--accent)" stopOpacity="0" /></linearGradient></defs>
         {[0, 0.5, 1].map((fraction) => {
           const y = top + plotHeight - fraction * plotHeight;
@@ -171,9 +180,11 @@ function AreaChart({ data, label = "sessions" }) {
         })}
         <path d={area} fill="url(#areaFill)" />
         <path d={line} className="area-line" />
-        {points.map((point) => <circle key={point.key} className="area-point" cx={point.x} cy={point.y} r="2.6"><title>{point.key}: {point.value} {label}</title></circle>)}
+        {activePoint && <g className="chart-crosshair" aria-hidden="true"><line x1={activePoint.x} x2={activePoint.x} y1={top} y2={top + plotHeight} /><line x1={left} x2={width - right} y1={activePoint.y} y2={activePoint.y} /></g>}
+        {points.map((point, index) => <circle key={point.key} className={`area-point ${index === hoveredIndex ? "is-active" : ""}`} cx={point.x} cy={point.y} r={index === hoveredIndex ? "5" : "2.6"} onFocus={() => setHoveredIndex(index)} onBlur={() => setHoveredIndex(null)} tabIndex={0}><title>{point.key}: {point.value} {label}</title></circle>)}
         {labels.map((point, index) => <text key={`${point.key}-${index}`} className="axis-label date-label" x={point.x} y={height - 8} textAnchor={index === 0 ? "start" : index === 2 ? "end" : "middle"}>{point.shortLabel}</text>)}
       </svg>
+      {activePoint && <div className={`chart-tooltip ${activePoint.x > width * 0.68 ? "tooltip-left" : ""} ${activePoint.y < 78 ? "tooltip-below" : ""}`} style={{ left: `${(activePoint.x / width) * 100}%`, top: `${(activePoint.y / height) * 100}%` }}><strong>{formatDate(new Date(`${activePoint.key}T00:00:00Z`))}</strong><span>{label}<b>{activePoint.value.toLocaleString()}</b></span></div>}
     </div>
   );
 }
@@ -241,6 +252,11 @@ function App() {
   const [loadState, setLoadState] = useState("loading");
   const [error, setError] = useState("");
   const [section, setSection] = useState("overview");
+  const [searchMode, setSearchMode] = useState("semantic");
+  const [semanticResult, setSemanticResult] = useState(null);
+  const [semanticStatus, setSemanticStatus] = useState("");
+  const [semanticLoading, setSemanticLoading] = useState(false);
+  const semanticRequestId = useRef(0);
   const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem("chatbot-theme") === "dark");
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [selectedConversation, setSelectedConversation] = useState(null);
@@ -290,8 +306,48 @@ function App() {
   const maxDate = useMemo(() => conversations.reduce((max, item) => item.dateKey && item.dateKey > max ? item.dateKey : max, ""), [conversations]);
   const minDate = useMemo(() => conversations.reduce((min, item) => item.dateKey && (!min || item.dateKey < min) ? item.dateKey : min, ""), [conversations]);
 
+  async function runSemanticSearch(query = filters.search) {
+    const normalizedQuery = query.trim();
+    if (normalizedQuery.length < 2) {
+      setSemanticStatus("Enter at least two characters to search.");
+      return;
+    }
+    const requestId = ++semanticRequestId.current;
+    setSemanticLoading(true);
+    setSemanticStatus("Searching conversations across languages…");
+    try {
+      const documents = conversations.map((item) => {
+        const userText = item.messages
+          .filter((message) => message.role === "user" && typeof message.content === "string")
+          .map((message) => message.content.replace(/\s+/g, " ").trim())
+          .filter(Boolean)
+          .join(" ");
+        let text = [item.title, userText].filter(Boolean).join(". ");
+        if (text.length > 400) text = `${text.slice(0, 250)} … ${text.slice(-145)}`;
+        return { id: String(item.id), text };
+      });
+      const response = await fetch("/api/semantic-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: normalizedQuery, documents }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Semantic search failed.");
+      if (requestId !== semanticRequestId.current) return;
+      setSemanticResult({ query: normalizedQuery, matches: result.matches || [] });
+      setSemanticStatus(`Found ${result.matches?.length || 0} matching conversations.`);
+    } catch (searchError) {
+      if (requestId === semanticRequestId.current) setSemanticStatus(searchError.message || "Semantic search is unavailable. Try text search instead.");
+    } finally {
+      if (requestId === semanticRequestId.current) setSemanticLoading(false);
+    }
+  }
+
   const filtered = useMemo(() => {
     const search = filters.search.trim().toLowerCase();
+    const semanticMatches = searchMode === "semantic" && semanticResult?.query === filters.search.trim()
+      ? new Map(semanticResult.matches.map((match, index) => [match.id, { index, score: match.score }]))
+      : null;
     let result = conversations.filter((item) => {
       if (filters.date !== "All dates" && filters.date !== "Custom range") {
         const days = Number(filters.date.match(/\d+/)?.[0] || 0);
@@ -312,6 +368,7 @@ function App() {
       if (filters.form === "Not submitted" && hasSubmission(item.form_submission)) return false;
       if (filters.minMessages !== "Any" && item.userMessages < Number(filters.minMessages)) return false;
       if (search) {
+        if (semanticMatches) return semanticMatches.has(String(item.id));
         const searchable = [item.id, item.title, item.country, item.source, ...item.messages.map((message) => typeof message.content === "string" ? message.content : JSON.stringify(message.content))].join(" ").toLowerCase();
         if (!searchable.includes(search)) return false;
       }
@@ -326,15 +383,18 @@ function App() {
         return filters.segment === "Returning users" ? isReturning : !isReturning;
       });
     }
+    if (semanticMatches) result.sort((a, b) => semanticMatches.get(String(a.id)).index - semanticMatches.get(String(b.id)).index);
     return result;
-  }, [conversations, filters, maxDate]);
+  }, [conversations, filters, maxDate, searchMode, semanticResult]);
 
   useEffect(() => setPage(0), [filters]);
 
   const stats = useMemo(() => {
     const sessions = filtered.length;
     const totalMessages = filtered.reduce((sum, item) => sum + item.totalMessages, 0);
-    const durations = filtered.map((item) => item.duration).filter((value) => value != null && Number.isFinite(value));
+    const durations = filtered.map((item) => item.duration).filter((value) => value != null && Number.isFinite(value) && value >= 0 && value <= 24 * 60 * 60).sort((a, b) => a - b);
+    const medianDuration = durations.length ? durations[Math.floor((durations.length - 1) / 2)] : null;
+    const p90Duration = durations.length ? durations[Math.floor((durations.length - 1) * 0.9)] : null;
     const users = new Map();
     for (const item of filtered) if (item.userKey) users.set(item.userKey, (users.get(item.userKey) || 0) + 1);
     const oneMessage = filtered.filter((item) => item.userMessages === 1).length;
@@ -343,7 +403,9 @@ function App() {
       sessions,
       totalMessages,
       averageMessages: sessions ? (totalMessages / sessions).toFixed(2) : "0.00",
-      averageDuration: durations.length ? durations.reduce((sum, value) => sum + value, 0) / durations.length : null,
+      medianDuration,
+      p90Duration,
+      durationOutliers: filtered.filter((item) => item.duration > 24 * 60 * 60).length,
       bounceRate: sessions ? `${((oneMessage / sessions) * 100).toFixed(1)}%` : "—",
       engagementRate: sessions ? `${((engaged / sessions) * 100).toFixed(1)}%` : "—",
       uniqueUsers: users.size,
@@ -371,6 +433,12 @@ function App() {
   }, [filtered]);
 
   const assistantMessages = useMemo(() => filtered.flatMap((item) => item.messages.filter((message) => message.role === "assistant").map((message) => ({ ...message, conversation: item }))), [filtered]);
+  const feedbackStats = useMemo(() => {
+    const rated = assistantMessages.filter((message) => message.feedback === "up" || message.feedback === "down");
+    const positive = rated.filter((message) => message.feedback === "up").length;
+    const withSources = assistantMessages.filter((message) => Array.isArray(message.matchedSources) && message.matchedSources.length > 0).length;
+    return { rated: rated.length, positive, withSources };
+  }, [assistantMessages]);
   const scoreCounts = useMemo(() => {
     const values = assistantMessages.map((item) => Number(item.score)).filter(Number.isFinite);
     const buckets = Array.from({ length: 10 }, (_, index) => ({ label: `${index * 10}–${index * 10 + 10}%`, value: 0 }));
@@ -410,7 +478,11 @@ function App() {
   }
 
   function resetFilters() {
+    semanticRequestId.current += 1;
+    setSemanticLoading(false);
     setFilters({ search: "", date: "All dates", from: "", to: "", country: "All countries", source: "All sources", chatbot: "All chatbots", sentiment: "All sentiments", segment: "All users", form: "All submissions", minMessages: "Any" });
+    setSemanticResult(null);
+    setSemanticStatus("");
   }
 
   if (loadState === "loading") return <div className="loading-screen"><span className="loading-mark">CA</span><div className="loading-spinner" /><p>Preparing your analytics…</p></div>;
@@ -448,10 +520,13 @@ function App() {
 
           <section className="filter-panel" aria-label="Dashboard filters">
             <div className="filter-toolbar">
-              <label className="search-field"><Icon name="search" size={19} /><input value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} placeholder="Search conversations or messages…" aria-label="Search conversations or messages" />{filters.search && <button onClick={() => updateFilter("search", "")} aria-label="Clear search"><Icon name="close" size={16} /></button>}</label>
+              <div className="search-field"><Icon name="search" size={19} /><input value={filters.search} onChange={(event) => { semanticRequestId.current += 1; setSemanticLoading(false); setSemanticResult(null); setSemanticStatus(""); updateFilter("search", event.target.value); }} onKeyDown={(event) => event.key === "Enter" && searchMode === "semantic" && runSemanticSearch()} placeholder={searchMode === "semantic" ? "Search by meaning in any language…" : "Search conversations or messages…"} aria-label="Search conversations or messages" />{filters.search && <button onClick={() => { semanticRequestId.current += 1; setSemanticLoading(false); updateFilter("search", ""); setSemanticResult(null); setSemanticStatus(""); }} aria-label="Clear search"><Icon name="close" size={16} /></button>}</div>
+              <div className="search-mode-group" role="group" aria-label="Search mode"><button className={searchMode === "text" ? "active" : ""} onClick={() => setSearchMode("text")}>Text</button><button className={searchMode === "semantic" ? "active" : ""} onClick={() => setSearchMode("semantic")}>Semantic</button></div>
+              {searchMode === "semantic" && <button className="semantic-search-button" onClick={() => runSemanticSearch()} disabled={semanticLoading || !filters.search.trim()}>{semanticLoading ? <span className="search-spinner" /> : <Icon name="search" size={15} />}{semanticLoading ? "Searching" : "Search"}</button>}
               <label className="date-select"><Icon name="calendar" size={17} /><select value={filters.date} onChange={(event) => updateFilter("date", event.target.value)} aria-label="Date window">{DATE_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select><Icon name="chevron" size={15} /></label>
               <button className={`filter-toggle ${filtersOpen ? "is-open" : ""}`} onClick={() => setFiltersOpen((value) => !value)}><Icon name="filter" size={16} /> Filters <span className="filter-count">{[filters.country !== "All countries", filters.source !== "All sources", filters.chatbot !== "All chatbots", filters.sentiment !== "All sentiments", filters.segment !== "All users", filters.form !== "All submissions", filters.minMessages !== "Any"].filter(Boolean).length || ""}</span></button>
             </div>
+            {searchMode === "semantic" && semanticStatus && <div className={`semantic-status ${semanticStatus.includes("could not") || semanticStatus.includes("not configured") || semanticStatus.includes("too large") ? "has-error" : ""}`} role="status">{semanticStatus}</div>}
             {filters.date === "Custom range" && <div className="custom-date-row"><label>From<input type="date" min={minDate} max={maxDate} value={filters.from} onChange={(event) => updateFilter("from", event.target.value)} /></label><label>To<input type="date" min={minDate} max={maxDate} value={filters.to} onChange={(event) => updateFilter("to", event.target.value)} /></label></div>}
             {filtersOpen && <div className="advanced-filters">
               <SelectFilter label="Country" value={filters.country} onChange={(value) => updateFilter("country", value)} options={["All countries", ...choices.countries]} />
@@ -470,7 +545,7 @@ function App() {
             <section className="metrics-grid">
               <MetricCard label="Sessions" value={stats.sessions.toLocaleString()} icon="messages" detail="Total conversations" />
               <MetricCard label="Total messages" value={stats.totalMessages.toLocaleString()} icon="overview" detail={`${stats.averageMessages} per session`} />
-              <MetricCard label="Avg. duration" value={formatDuration(stats.averageDuration)} icon="calendar" detail="Across conversations with timestamps" />
+              <MetricCard label="Median duration" value={formatDuration(stats.medianDuration)} icon="calendar" detail={`P90 ${formatDuration(stats.p90Duration)} · ${stats.durationOutliers} over 24h excluded`} />
               <MetricCard label="Bounce rate" value={stats.bounceRate} icon="arrow" detail="Sessions with one user message" />
               <MetricCard label="Unique users" value={stats.uniqueUsers.toLocaleString()} icon="users" detail={`${stats.newUsers.toLocaleString()} new`} />
               <MetricCard label="Returning users" value={stats.returningUsers.toLocaleString()} icon="users" detail={`${stats.engagementRate} engaged sessions`} />
@@ -486,8 +561,10 @@ function App() {
           {section === "quality" && <>
             <section className="metrics-grid compact-metrics">
               <MetricCard label="Assistant messages" value={assistantMessages.length.toLocaleString()} icon="messages" detail="For selected conversations" />
-              <MetricCard label="Scored responses" value={assistantMessages.filter((message) => message.score != null && message.score !== "" && Number.isFinite(Number(message.score))).length.toLocaleString()} icon="quality" detail="Responses with a score" />
-              <MetricCard label="Assistant sources" value={assistantSourceCounts.length.toLocaleString()} icon="overview" detail="Distinct source labels" />
+              <MetricCard label="Scored responses" value={assistantMessages.filter((message) => message.score != null && message.score !== "" && Number.isFinite(Number(message.score))).length.toLocaleString()} icon="quality" detail="Responses with an available score" />
+              <MetricCard label="Responses with sources" value={`${assistantMessages.length ? ((feedbackStats.withSources / assistantMessages.length) * 100).toFixed(1) : "0.0"}%`} icon="overview" detail={`${feedbackStats.withSources.toLocaleString()} linked to at least one source`} />
+              <MetricCard label="Positive feedback" value={feedbackStats.rated ? `${((feedbackStats.positive / feedbackStats.rated) * 100).toFixed(1)}%` : "—"} icon="quality" detail={`${feedbackStats.positive} positive of ${feedbackStats.rated} rated responses`} />
+              <MetricCard label="Source types" value={assistantSourceCounts.length.toLocaleString()} icon="overview" detail="Distinct assistant source labels" />
             </section>
             <section className="charts-grid">
               <ChartCard title="Assistant score distribution" subtitle="Scores grouped into deciles"><BarList data={scoreCounts} valueLabel="answers" maxItems={10} /></ChartCard>

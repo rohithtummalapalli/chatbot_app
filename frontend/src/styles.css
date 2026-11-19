@@ -79,6 +79,15 @@ h1, h2, h3 { font-family: Manrope, sans-serif; letter-spacing: -.035em; }
 .search-field input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 12px; }
 .search-field input::placeholder { color: var(--subtle); }
 .search-field button { display: grid; place-items: center; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.search-mode-group { display: flex; flex: 0 0 auto; height: 35px; padding: 3px; border: 1px solid var(--border); border-radius: 7px; background: var(--sidebar); }
+.search-mode-group button { padding: 0 9px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 10px; font-weight: 600; cursor: pointer; }
+.search-mode-group button.active { background: var(--surface); color: var(--accent-ink); box-shadow: 0 1px 3px rgb(21 25 30 / 10%); }
+.semantic-search-button { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 6px; height: 39px; padding: 0 11px; border: 1px solid var(--accent); border-radius: 7px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; cursor: pointer; }
+.semantic-search-button:hover:not(:disabled) { filter: brightness(.96); }
+.semantic-search-button:disabled { cursor: default; opacity: .56; }
+.search-spinner { width: 13px; height: 13px; border: 2px solid rgb(255 255 255 / 45%); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+.semantic-status { padding: 8px 2px 2px; color: var(--muted); font-size: 10px; }
+.semantic-status.has-error { color: var(--accent-ink); }
 .date-select { gap: 8px; min-width: 160px; padding: 0 10px; }
 .date-select select, .filter-field select { width: 100%; border: 0; outline: 0; appearance: none; background: transparent; color: var(--ink); font-size: 12px; cursor: pointer; }
 .filter-toggle { gap: 8px; padding: 0 12px; color: var(--ink); font-size: 12px; font-weight: 600; cursor: pointer; }
@@ -108,12 +117,22 @@ h1, h2, h3 { font-family: Manrope, sans-serif; letter-spacing: -.035em; }
 .chart-heading { display: flex; align-items: flex-start; justify-content: space-between; min-height: 47px; }
 .chart-heading h2, .data-heading h2 { margin: 0; font-size: 14px; font-weight: 800; }
 .chart-heading p, .data-heading p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
-.area-chart-wrap { width: 100%; margin-top: 12px; }
-.area-chart { display: block; width: 100%; overflow: visible; }
+.area-chart-wrap { position: relative; width: 100%; margin-top: 12px; }
+.area-chart { display: block; width: 100%; overflow: visible; cursor: crosshair; touch-action: pan-y; }
 .chart-gridline { stroke: var(--chart-grid); stroke-width: 1; }
 .axis-label { fill: var(--subtle); font-family: 'DM Sans', sans-serif; font-size: 10px; }
 .area-line { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .area-point { fill: var(--surface); stroke: var(--accent); stroke-width: 1.8; }
+.area-point:focus { outline: none; stroke-width: 3; }
+.area-point.is-active { fill: var(--accent); stroke: var(--surface); stroke-width: 2.5; }
+.chart-crosshair line { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 4; opacity: .62; pointer-events: none; }
+.chart-tooltip { position: absolute; z-index: 2; display: grid; gap: 5px; min-width: 112px; padding: 9px 11px; transform: translate(10px, calc(-100% - 8px)); border: 1px solid var(--border); border-radius: 7px; background: var(--surface-raised); box-shadow: 0 5px 18px rgb(20 30 27 / 13%); color: var(--ink); pointer-events: none; font-size: 10px; }
+.chart-tooltip strong { font-size: 11px; }
+.chart-tooltip span { display: flex; align-items: center; justify-content: space-between; gap: 14px; color: var(--muted); text-transform: capitalize; }
+.chart-tooltip b { color: var(--ink); font-size: 12px; }
+.chart-tooltip.tooltip-left { transform: translate(calc(-100% - 10px), calc(-100% - 8px)); }
+.chart-tooltip.tooltip-below { transform: translate(10px, 10px); }
+.chart-tooltip.tooltip-left.tooltip-below { transform: translate(calc(-100% - 10px), 10px); }
 .bar-list { display: grid; gap: 13px; padding-top: 11px; }
 .bar-row { display: grid; grid-template-columns: minmax(65px, 112px) minmax(40px, 1fr) minmax(82px, auto); align-items: center; gap: 10px; }
 .bar-label { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
