@@ -41,6 +41,13 @@ function hasSubmission(value) {
   return Boolean(value);
 }
 
+function confidenceScorePercent(value) {
+  if (value == null || value === "") return null;
+  const score = Number(value);
+  if (!Number.isFinite(score)) return null;
+  return Math.max(0, Math.min(100, score <= 1.01 ? score * 100 : score));
+}
+
 function conversationUserKey(conversation) {
   return conversation.analytics_user_id || conversation.user_id || conversation.anonymous_id || null;
 }
@@ -111,9 +118,9 @@ function SelectFilter({ label, value, onChange, options }) {
   );
 }
 
-function MetricCard({ label, value, icon, detail }) {
+function MetricCard({ label, value, icon, detail, title }) {
   return (
-    <article className="metric-card">
+    <article className="metric-card" title={title}>
       <div className="metric-topline">
         <span>{label}</span>
         <span className="metric-icon"><Icon name={icon} size={17} /></span>
@@ -275,6 +282,8 @@ function App() {
     segment: "All users",
     form: "All submissions",
     minMessages: "Any",
+    scoreMin: "",
+    scoreMax: "",
   });
 
   useEffect(() => {
@@ -375,6 +384,16 @@ function App() {
       if (filters.form === "Submitted" && !hasSubmission(item.form_submission)) return false;
       if (filters.form === "Not submitted" && hasSubmission(item.form_submission)) return false;
       if (filters.minMessages !== "Any" && item.userMessages < Number(filters.minMessages)) return false;
+      if (filters.scoreMin !== "" || filters.scoreMax !== "") {
+        const minScore = filters.scoreMin === "" ? 0 : Number(filters.scoreMin);
+        const maxScore = filters.scoreMax === "" ? 100 : Number(filters.scoreMax);
+        const hasScoreInRange = item.messages.some((message) => {
+          if (message.role !== "assistant") return false;
+          const score = confidenceScorePercent(message.score);
+          return score != null && score >= minScore && score <= maxScore;
+        });
+        if (!hasScoreInRange) return false;
+      }
       if (search) {
         if (semanticMatches) return semanticMatches.has(String(item.id));
         const searchable = [item.id, item.title, item.country, item.source, ...item.messages.map((message) => typeof message.content === "string" ? message.content : JSON.stringify(message.content))].join(" ").toLowerCase();
@@ -401,7 +420,12 @@ function App() {
     const sessions = filtered.length;
     const totalMessages = filtered.reduce((sum, item) => sum + item.totalMessages, 0);
     const durations = filtered.map((item) => item.duration).filter((value) => value != null && Number.isFinite(value) && value >= 0 && value <= 24 * 60 * 60).sort((a, b) => a - b);
-    const medianDuration = durations.length ? durations[Math.floor((durations.length - 1) / 2)] : null;
+    const middleDuration = Math.floor(durations.length / 2);
+    const medianDuration = !durations.length
+      ? null
+      : durations.length % 2
+        ? durations[middleDuration]
+        : (durations[middleDuration - 1] + durations[middleDuration]) / 2;
     const p90Duration = durations.length ? durations[Math.floor((durations.length - 1) * 0.9)] : null;
     const users = new Map();
     for (const item of filtered) if (item.userKey) users.set(item.userKey, (users.get(item.userKey) || 0) + 1);
@@ -411,6 +435,7 @@ function App() {
       sessions,
       totalMessages,
       averageMessages: sessions ? (totalMessages / sessions).toFixed(2) : "0.00",
+      engagedSessions: engaged,
       medianDuration,
       p90Duration,
       durationOutliers: filtered.filter((item) => item.duration > 24 * 60 * 60).length,
@@ -448,10 +473,9 @@ function App() {
     return { rated: rated.length, positive, withSources };
   }, [assistantMessages]);
   const scoreCounts = useMemo(() => {
-    const values = assistantMessages.map((item) => Number(item.score)).filter(Number.isFinite);
+    const values = assistantMessages.map((item) => confidenceScorePercent(item.score)).filter((value) => value != null);
     const buckets = Array.from({ length: 10 }, (_, index) => ({ label: `${index * 10}–${index * 10 + 10}%`, value: 0 }));
-    const normalized = values.map((value) => value <= 1 ? value * 100 : value);
-    for (const value of normalized) buckets[Math.min(9, Math.max(0, Math.floor(value / 10)))].value += 1;
+    for (const value of values) buckets[Math.min(9, Math.max(0, Math.floor(value / 10)))].value += 1;
     return buckets;
   }, [assistantMessages]);
   const assistantSourceCounts = useMemo(() => countBy(assistantMessages, (item) => item.source || "Unknown"), [assistantMessages]);
@@ -488,7 +512,7 @@ function App() {
   function resetFilters() {
     semanticRequestId.current += 1;
     setSemanticLoading(false);
-    setFilters({ search: "", date: "All dates", from: "", to: "", country: "All countries", source: "Chat Bubble/Iframe", chatbot: "All chatbots", sentiment: "All sentiments", segment: "All users", form: "All submissions", minMessages: "Any" });
+    setFilters({ search: "", date: "All dates", from: "", to: "", country: "All countries", source: "Chat Bubble/Iframe", chatbot: "All chatbots", sentiment: "All sentiments", segment: "All users", form: "All submissions", minMessages: "Any", scoreMin: "", scoreMax: "" });
     setSemanticResult(null);
     setSemanticStatus("");
     setTextSearchQuery("");
@@ -533,7 +557,7 @@ function App() {
               <div className="search-mode-group" role="group" aria-label="Search mode"><button className={searchMode === "text" ? "active" : ""} onClick={() => { setSearchMode("text"); applyTextSearch(); }}>Text</button><button className={searchMode === "semantic" ? "active" : ""} onClick={() => setSearchMode("semantic")}>Semantic</button></div>
               <button className="semantic-search-button" onClick={() => searchMode === "semantic" ? runSemanticSearch() : applyTextSearch()} disabled={(searchMode === "semantic" && semanticLoading) || !filters.search.trim()}>{searchMode === "semantic" && semanticLoading ? <span className="search-spinner" /> : <Icon name="search" size={15} />}{searchMode === "semantic" && semanticLoading ? "Searching" : "Search"}</button>
               <label className="date-select"><Icon name="calendar" size={17} /><select value={filters.date} onChange={(event) => updateFilter("date", event.target.value)} aria-label="Date window">{DATE_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select><Icon name="chevron" size={15} /></label>
-              <button className={`filter-toggle ${filtersOpen ? "is-open" : ""}`} onClick={() => setFiltersOpen((value) => !value)}><Icon name="filter" size={16} /> Filters <span className="filter-count">{[filters.country !== "All countries", filters.source !== "All sources", filters.chatbot !== "All chatbots", filters.sentiment !== "All sentiments", filters.segment !== "All users", filters.form !== "All submissions", filters.minMessages !== "Any"].filter(Boolean).length || ""}</span></button>
+              <button className={`filter-toggle ${filtersOpen ? "is-open" : ""}`} onClick={() => setFiltersOpen((value) => !value)}><Icon name="filter" size={16} /> Filters <span className="filter-count">{[filters.country !== "All countries", filters.source !== "All sources", filters.chatbot !== "All chatbots", filters.sentiment !== "All sentiments", filters.segment !== "All users", filters.form !== "All submissions", filters.minMessages !== "Any", filters.scoreMin !== "" || filters.scoreMax !== ""].filter(Boolean).length || ""}</span></button>
             </div>
             {searchMode === "semantic" && semanticStatus && <div className={`semantic-status ${semanticStatus.includes("could not") || semanticStatus.includes("not configured") || semanticStatus.includes("too large") ? "has-error" : ""}`} role="status">{semanticStatus}</div>}
             {filters.date === "Custom range" && <div className="custom-date-row"><label>From<input type="date" min={minDate} max={maxDate} value={filters.from} onChange={(event) => updateFilter("from", event.target.value)} /></label><label>To<input type="date" min={minDate} max={maxDate} value={filters.to} onChange={(event) => updateFilter("to", event.target.value)} /></label></div>}
@@ -545,19 +569,22 @@ function App() {
               <SelectFilter label="User type" value={filters.segment} onChange={(value) => updateFilter("segment", value)} options={["All users", "New users", "Returning users"]} />
               <SelectFilter label="Form" value={filters.form} onChange={(value) => updateFilter("form", value)} options={["All submissions", "Submitted", "Not submitted"]} />
               <SelectFilter label="Min. user messages" value={filters.minMessages} onChange={(value) => updateFilter("minMessages", value)} options={["Any", "1", "2", "3", "5", "10"]} />
+              <label className="filter-field score-range-filter"><span>Confidence score (%)</span><div className="score-range-inputs"><input type="number" min="0" max="100" step="1" placeholder="Min" aria-label="Minimum confidence score" value={filters.scoreMin} onChange={(event) => updateFilter("scoreMin", event.target.value)} /><span>to</span><input type="number" min="0" max="100" step="1" placeholder="Max" aria-label="Maximum confidence score" value={filters.scoreMax} onChange={(event) => updateFilter("scoreMax", event.target.value)} /></div><small>{filters.scoreMin !== "" && filters.scoreMax !== "" && Number(filters.scoreMin) > Number(filters.scoreMax) ? "Minimum must not exceed maximum" : "Chats with an assistant response in range"}</small></label>
               <button className="reset-filters" onClick={resetFilters}>Reset filters</button>
             </div>}
-            <div className="result-line"><span>Showing <strong>{filtered.length.toLocaleString()}</strong> of {conversations.length.toLocaleString()} conversations</span>{(filters.search || filters.country !== "All countries" || filters.source !== "All sources" || filters.chatbot !== "All chatbots" || filters.sentiment !== "All sentiments" || filters.segment !== "All users" || filters.form !== "All submissions" || filters.date !== "All dates" || filters.minMessages !== "Any") && <button onClick={resetFilters}>Clear all</button>}</div>
+            <div className="result-line"><span>Showing <strong>{filtered.length.toLocaleString()}</strong> of {conversations.length.toLocaleString()} conversations</span>{(filters.search || filters.country !== "All countries" || filters.source !== "All sources" || filters.chatbot !== "All chatbots" || filters.sentiment !== "All sentiments" || filters.segment !== "All users" || filters.form !== "All submissions" || filters.date !== "All dates" || filters.minMessages !== "Any" || filters.scoreMin !== "" || filters.scoreMax !== "") && <button onClick={resetFilters}>Clear all</button>}</div>
           </section>
 
           {section === "overview" && <>
             <section className="metrics-grid">
               <MetricCard label="Sessions" value={stats.sessions.toLocaleString()} icon="messages" detail="Total conversations" />
-              <MetricCard label="Total messages" value={stats.totalMessages.toLocaleString()} icon="overview" detail={`${stats.averageMessages} per session`} />
-              <MetricCard label="Median duration" value={formatDuration(stats.medianDuration)} icon="calendar" detail={`P90 ${formatDuration(stats.p90Duration)} · ${stats.durationOutliers} over 24h excluded`} />
+              <MetricCard label="Total messages" value={stats.totalMessages.toLocaleString()} icon="overview" detail="User and assistant messages" />
+              <MetricCard label="Avg msgs/session" value={stats.averageMessages} icon="messages" detail="User and assistant messages per conversation" />
+              <MetricCard label="Engagement rate" value={stats.engagementRate} icon="arrow" detail={`${stats.engagedSessions.toLocaleString()} sessions with 2+ user messages`} />
+              <MetricCard label="Median session duration" value={formatDuration(stats.medianDuration)} icon="calendar" detail={`Middle session length · P90 ${formatDuration(stats.p90Duration)} · ${stats.durationOutliers} over 24h excluded`} title="The median is the middle session length: half of sessions are shorter and half are longer. Sessions over 24 hours are excluded because their timestamps may include inactive time." />
               <MetricCard label="Bounce rate" value={stats.bounceRate} icon="arrow" detail="Sessions with one user message" />
               <MetricCard label="Unique users" value={stats.uniqueUsers.toLocaleString()} icon="users" detail={`${stats.newUsers.toLocaleString()} new`} />
-              <MetricCard label="Returning users" value={stats.returningUsers.toLocaleString()} icon="users" detail={`${stats.engagementRate} engaged sessions`} />
+              <MetricCard label="Returning users" value={stats.returningUsers.toLocaleString()} icon="users" detail="More than one session in this selection" />
             </section>
             <section className="charts-grid overview-charts">
               <ChartCard title="Sessions over time" subtitle="Daily conversation volume" className="wide-chart"><AreaChart data={byDay} /></ChartCard>
