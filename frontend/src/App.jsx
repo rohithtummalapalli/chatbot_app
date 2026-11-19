@@ -28,6 +28,7 @@ function Icon({ name, size = 19 }) {
     moon: <path d="M20 15.2A8.4 8.4 0 0 1 8.8 4 8.5 8.5 0 1 0 20 15.2Z" />,
     close: <><path d="m6 6 12 12M18 6 6 18" /></>,
     arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
+    trash: <><path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 13h11l1-13M9 7V4h6v3" /></>,
   };
   return <svg {...common}>{paths[name] || paths.overview}</svg>;
 }
@@ -257,13 +258,14 @@ function ConversationDrawer({ conversation, onClose }) {
   );
 }
 
-function SummaryReport({ summary }) {
+function SummaryReport({ summary, onExport, exportBusy }) {
   if (!summary) return null;
   const report = summary.report || {};
   const categories = Array.isArray(report.categories) ? report.categories : [];
   const priorities = Array.isArray(report.priorities) ? report.priorities : [];
   const lowConfidenceThemes = Array.isArray(report.lowConfidenceThemes) ? report.lowConfidenceThemes : [];
   return <div className="summary-report">
+    <div className="summary-report-toolbar"><div><p className="eyebrow">SAVED ANALYSIS</p><h2>Chat Summary</h2></div><button className="summary-export-button" onClick={onExport} disabled={exportBusy}><Icon name="download" size={16} />{exportBusy ? "Preparing Word file…" : "Export Word"}</button></div>
     <section className="summary-report-intro"><div className="summary-report-meta"><span>{summary.startDate} to {summary.endDate}</span><span>{summary.language}</span><span>{Number(summary.conversationCount || 0).toLocaleString()} conversations</span><span>{Number(summary.lowConfidenceCount || 0).toLocaleString()} low confidence conversations</span></div><p>{report.executiveSummary || "No executive summary was returned."}</p></section>
     <section className="summary-results-grid">
       <article className="summary-result-card"><div className="summary-section-heading"><div><h3>Conversation categories</h3><p>One primary category per conversation.</p></div></div>
@@ -311,6 +313,9 @@ function App() {
   const [activeSummary, setActiveSummary] = useState(null);
   const [summaryStatus, setSummaryStatus] = useState("");
   const [summaryBusy, setSummaryBusy] = useState(false);
+  const [summaryToDelete, setSummaryToDelete] = useState(null);
+  const [summaryDeleteBusy, setSummaryDeleteBusy] = useState(false);
+  const [summaryExportBusy, setSummaryExportBusy] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [loginPassword, setLoginPassword] = useState("");
@@ -634,7 +639,7 @@ function App() {
     setSummaryBusy(true);
     setSummaryStatus("Loading saved summary…");
     try {
-      const response = await fetch("/api/chat-summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "lookup", startDate: item.startDate, endDate: item.endDate, language: item.language }) });
+      const response = await fetch("/api/chat-summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "lookup", id: item.id }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not open this summary.");
       setActiveSummary(result.summary);
@@ -648,6 +653,41 @@ function App() {
       setSummaryStatus(summaryError.message);
     } finally {
       setSummaryBusy(false);
+    }
+  }
+
+  async function deleteSavedSummary() {
+    if (!summaryToDelete) return;
+    setSummaryDeleteBusy(true);
+    setSummaryStatus("");
+    try {
+      const response = await fetch("/api/chat-summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete", id: summaryToDelete.id }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not delete this report.");
+      setSavedSummaries((current) => current.filter((item) => item.id !== result.id));
+      if (activeSummary?.id === result.id) setActiveSummary(null);
+      setSummaryStatus("Saved report deleted.");
+      setSummaryToDelete(null);
+    } catch (deleteError) {
+      setSummaryStatus(deleteError.message || "Could not delete this report.");
+    } finally {
+      setSummaryDeleteBusy(false);
+    }
+  }
+
+  async function exportSummaryWord() {
+    if (!activeSummary) return;
+    setSummaryExportBusy(true);
+    setSummaryStatus("");
+    try {
+      const { exportSummaryToWord } = await import("./exportSummary.js");
+      await exportSummaryToWord(activeSummary);
+      setSummaryStatus("Word report exported.");
+    } catch (exportError) {
+      console.error("Could not export chat summary", exportError);
+      setSummaryStatus("Could not export the Word report. Try again or refresh the dashboard.");
+    } finally {
+      setSummaryExportBusy(false);
     }
   }
 
@@ -711,18 +751,30 @@ function App() {
       const scores = selected.flatMap((conversation) => conversation.messages.filter((message) => message.role === "assistant").map((message) => confidenceScorePercent(message.score)).filter((score) => score != null)).sort((a, b) => a - b);
       const cutoff = scores.length ? scores[Math.max(0, Math.ceil(scores.length * 0.1) - 1)] : null;
       const payload = selected.map((conversation) => {
-        const messages = conversation.messages.filter((message) => ["user", "assistant"].includes(message.role) && typeof message.content === "string");
+        const messages = [];
+        let textLength = 0;
+        for (const message of conversation.messages) {
+          if (!["user", "assistant"].includes(message.role) || typeof message.content !== "string") continue;
+          const remaining = 6_000 - textLength;
+          if (remaining <= 0) break;
+          const content = message.content.replace(/\s+/g, " ").slice(0, Math.min(900, remaining));
+          if (!content.trim()) continue;
+          messages.push({ role: message.role, content, score: message.score });
+          textLength += content.length;
+        }
         const isLowConfidence = cutoff != null && messages.some((message) => message.role === "assistant" && confidenceScorePercent(message.score) != null && confidenceScorePercent(message.score) <= cutoff);
-        return { id: String(conversation.id), lowConfidence: isLowConfidence, messages: messages.map(({ role, content, score }) => ({ role, content, score })) };
+        return { id: String(conversation.id), lowConfidence: isLowConfidence, messages };
       });
       const classifications = [];
-      const batchSize = 25;
+      const batchSize = 100;
       for (let start = 0; start < payload.length; start += batchSize) {
         const batch = payload.slice(start, start + batchSize);
         const index = Math.floor(start / batchSize) + 1;
         const total = Math.ceil(payload.length / batchSize);
         setSummaryStatus(`Analysing conversations ${Math.min(start + batch.length, payload.length).toLocaleString()} of ${payload.length.toLocaleString()} (batch ${index} of ${total})…`);
-        const response = await fetch("/api/chat-summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "classify", startDate: summaryStart, endDate: summaryEnd, language: reportLanguage, conversations: batch }) });
+        const knownCategories = [...new Set(classifications.map((item) => item.category))].slice(0, 60);
+        const knownTopics = [...new Set(classifications.map((item) => item.topic))].slice(0, 100);
+        const response = await fetch("/api/chat-summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "classify", startDate: summaryStart, endDate: summaryEnd, language: reportLanguage, knownCategories, knownTopics, conversations: batch }) });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Conversation analysis failed.");
         classifications.push(...result.items);
@@ -872,10 +924,10 @@ function App() {
                   <p className="summary-explainer">The report groups similar customer needs, counts categories, suggests high impact improvements, and reviews chats containing responses in the lowest confidence score decile. Chat text is sent to your Azure OpenAI deployment for analysis; only the finished report and date range are saved in D1.</p>
                   {summaryStatus && <p className={`summary-status ${summaryStatus.includes("could not") || summaryStatus.includes("failed") || summaryStatus.includes("not configured") || summaryStatus.includes("No Chat") || summaryStatus.includes("Choose") ? "has-error" : ""}`} role="status">{summaryStatus}</p>}
                 </section>
-                {activeSummary ? <SummaryReport summary={activeSummary} /> : !summaryBusy && <section className="summary-empty card-surface"><span className="summary-empty-mark"><Icon name="summary" size={23} /></span><h3>Your summary will appear here</h3><p>Choose a date range and report language, then generate the report.</p></section>}
+                {activeSummary ? <SummaryReport summary={activeSummary} onExport={exportSummaryWord} exportBusy={summaryExportBusy} /> : !summaryBusy && <section className="summary-empty card-surface"><span className="summary-empty-mark"><Icon name="summary" size={23} /></span><h3>Your summary will appear here</h3><p>Choose a date range and report language, then generate the report.</p></section>}
               </div>
               <aside className="saved-summary-panel card-surface"><div className="summary-section-heading"><div><h2>Saved reports</h2><p>Reopen a report without another AI run.</p></div><span className="saved-summary-count">{savedSummaries.length}</span></div>
-                {savedSummaries.length ? <div className="saved-summary-list">{savedSummaries.map((item) => <button key={item.id} className={`saved-summary-item ${activeSummary?.id === item.id ? "selected" : ""}`} onClick={() => loadSavedSummary(item)} disabled={summaryBusy}><strong>{item.startDate} – {item.endDate}</strong><span>{item.language} · {Number(item.conversationCount).toLocaleString()} conversations</span><small>{new Date(item.createdAt).toLocaleDateString()}</small></button>)}</div> : <p className="summary-muted">{summaryStatus.includes("not configured") ? "Connect D1 to load reports." : "No saved reports yet."}</p>}
+                {savedSummaries.length ? <div className="saved-summary-list">{savedSummaries.map((item) => <div key={item.id} className={`saved-summary-item ${activeSummary?.id === item.id ? "selected" : ""}`}><button className="saved-summary-open" onClick={() => loadSavedSummary(item)} disabled={summaryBusy || summaryDeleteBusy}><strong>{item.startDate} – {item.endDate}</strong><span>{item.language} · {Number(item.conversationCount).toLocaleString()} conversations</span><small>{new Date(item.createdAt).toLocaleDateString()}{item.promptVersion < 3 ? " · Earlier category model" : ""}</small></button><button className="saved-summary-delete" onClick={() => setSummaryToDelete(item)} disabled={summaryBusy || summaryDeleteBusy} aria-label={`Delete report from ${item.startDate} to ${item.endDate}`} title="Delete saved report"><Icon name="trash" size={16} /></button></div>)}</div> : <p className="summary-muted">{summaryStatus.includes("not configured") ? "Connect D1 to load reports." : "No saved reports yet."}</p>}
               </aside>
             </div>
           </section>}
@@ -883,6 +935,7 @@ function App() {
           <footer className="page-footer">Chatbot analytics <span>·</span> Filtered views update across charts and exports</footer>
         </main>
       </div>
+      {summaryToDelete && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !summaryDeleteBusy && setSummaryToDelete(null)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-summary-title" aria-describedby="delete-summary-description"><span className="confirm-dialog-icon"><Icon name="trash" size={19} /></span><h2 id="delete-summary-title">Delete this saved report?</h2><p id="delete-summary-description">This removes the report for {summaryToDelete.startDate} to {summaryToDelete.endDate} ({summaryToDelete.language}) from saved reports. This cannot be undone.</p><div className="confirm-dialog-actions"><button className="confirm-cancel" onClick={() => setSummaryToDelete(null)} disabled={summaryDeleteBusy}>Cancel</button><button className="confirm-delete" onClick={deleteSavedSummary} disabled={summaryDeleteBusy}>{summaryDeleteBusy ? "Deleting…" : "Delete report"}</button></div></section></div>}
       <ConversationDrawer conversation={selectedConversation} onClose={() => setSelectedConversation(null)} />
     </div>
   );

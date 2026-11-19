@@ -211,14 +211,24 @@ tbody tr:hover { background: color-mix(in srgb, var(--sidebar) 58%, var(--surfac
 .saved-summary-panel { position: sticky; top: 74px; }
 .saved-summary-count { display: grid; place-items: center; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; background: var(--sidebar); color: var(--muted); font-size: 10px; font-weight: 700; }
 .saved-summary-list { display: grid; gap: 7px; max-height: min(65vh, 600px); overflow: auto; margin-top: 15px; }
-.saved-summary-item { display: grid; gap: 5px; width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--muted); text-align: left; cursor: pointer; }
-.saved-summary-item:hover, .saved-summary-item.selected { border-color: var(--accent); background: var(--accent-soft); }
-.saved-summary-item:disabled { cursor: default; opacity: .65; }
-.saved-summary-item strong { color: var(--ink); font-size: 10px; }
-.saved-summary-item span, .saved-summary-item small { font-size: 9px; }
-.saved-summary-item small { color: var(--subtle); }
+.saved-summary-item { display: grid; grid-template-columns: minmax(0, 1fr) 36px; align-items: stretch; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); }
+.saved-summary-item:hover, .saved-summary-item:focus-within, .saved-summary-item.selected { border-color: var(--accent); background: var(--accent-soft); }
+.saved-summary-open { display: grid; min-width: 0; gap: 5px; padding: 10px; border: 0; border-radius: inherit; background: transparent; color: var(--muted); text-align: left; cursor: pointer; }
+.saved-summary-open:disabled { cursor: default; opacity: .65; }
+.saved-summary-open strong { overflow-wrap: anywhere; color: var(--ink); font-size: 10px; }
+.saved-summary-open span, .saved-summary-open small { font-size: 9px; }
+.saved-summary-open small { color: var(--subtle); }
+.saved-summary-delete { display: grid; place-items: center; align-self: center; width: 30px; height: 30px; margin-right: 4px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--subtle); cursor: pointer; }
+.saved-summary-delete:hover:not(:disabled) { border-color: var(--accent); background: var(--surface); color: var(--accent-ink); }
+.saved-summary-delete:disabled { cursor: default; opacity: .45; }
 .saved-summary-panel > .summary-muted { margin-top: 14px; }
 .summary-report { display: grid; gap: 14px; min-width: 0; }
+.summary-report-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.summary-report-toolbar .eyebrow { margin: 0 0 4px; }
+.summary-report-toolbar h2 { margin: 0; font-size: 18px; }
+.summary-export-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 10px; font-weight: 700; cursor: pointer; }
+.summary-export-button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); }
+.summary-export-button:disabled { cursor: default; opacity: .6; }
 .summary-report-intro, .summary-limitations { padding: 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
 .summary-report-meta { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
 .summary-report-meta span { padding: 5px 8px; border-radius: 5px; background: var(--sidebar); color: var(--muted); font-size: 9px; }
@@ -247,6 +257,15 @@ tbody tr:hover { background: color-mix(in srgb, var(--sidebar) 58%, var(--surfac
 .summary-limitations { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
 .summary-limitations strong { color: var(--ink); }
 .summary-created { margin: 0; color: var(--subtle); font-size: 9px; }
+.confirm-backdrop { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; padding: 18px; background: rgb(13 19 18 / 48%); animation: fade-in .14s ease-out; }
+.confirm-dialog { display: grid; width: min(420px, 100%); gap: 12px; padding: 22px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.confirm-dialog-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); }
+.confirm-dialog h2 { margin: 0; font-size: 17px; }
+.confirm-dialog > p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.confirm-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 5px; }
+.confirm-dialog-actions button { min-height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 10px; font-weight: 700; cursor: pointer; }
+.confirm-dialog-actions button:disabled { cursor: default; opacity: .6; }
+.confirm-dialog-actions .confirm-delete { border-color: var(--accent); background: var(--accent); color: #fff; }
 .page-footer { padding: 7px 0 0; color: var(--subtle); font-size: 10px; }
 .page-footer span { padding: 0 5px; color: var(--accent); }
 .drawer-backdrop { position: fixed; z-index: 20; inset: 0; display: flex; justify-content: flex-end; background: rgb(15 20 18 / 36%); animation: fade-in .16s ease-out; }
