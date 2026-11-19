@@ -42,7 +42,7 @@ export async function onRequestPost({ request, env }) {
       return Response.json({ error: "The conversation export is too large for semantic search." }, { status: 413 });
     }
     ids.push(document.id);
-    contexts.push(context);
+    contexts.push({ text: context });
   }
 
   if (!contexts.length) return Response.json({ matches: [] });
