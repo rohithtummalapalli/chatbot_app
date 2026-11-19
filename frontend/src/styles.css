@@ -35,8 +35,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .sidebar { position: fixed; z-index: 5; inset: 0 auto 0 0; display: flex; flex-direction: column; width: 254px; padding: 24px 16px 18px; background: var(--sidebar); border-right: 1px solid var(--border); }
 .brand-row { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 0 7px; }
 .brand-mark, .loading-mark { display: grid; place-items: center; flex: 0 0 39px; height: 39px; color: #fff; background: var(--accent); font-family: Manrope, sans-serif; font-size: 12px; font-weight: 800; line-height: 1; letter-spacing: -.06em; }
+.brand-logo { display: block; flex: 0 0 39px; width: 39px; height: 39px; object-fit: contain; }
 .brand-name { font-family: Manrope, sans-serif; font-size: 14px; font-weight: 800; letter-spacing: -.035em; }
-.brand-name span { display: block; margin-top: 3px; color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 11px; font-weight: 500; letter-spacing: 0; }
 .workspace-label, .topbar-kicker, .eyebrow { color: var(--subtle); font-size: 10px; font-weight: 700; letter-spacing: .12em; }
 .workspace-label { margin: 42px 10px 12px; }
 .main-nav { display: grid; gap: 5px; }
@@ -256,8 +256,8 @@ tbody tr:hover { background: color-mix(in srgb, var(--sidebar) 58%, var(--surfac
 @media (max-width: 760px) {
   .sidebar { position: static; width: 100%; height: auto; padding: 12px 15px 10px; border-right: 0; border-bottom: 1px solid var(--border); }
   .brand-row { min-height: 38px; }
-  .brand-mark { flex-basis: 34px; height: 34px; }
-  .brand-name span, .workspace-label, .sidebar-footer { display: none; }
+  .brand-logo { flex-basis: 34px; width: 34px; height: 34px; }
+  .workspace-label, .sidebar-footer { display: none; }
   .main-nav { display: flex; gap: 3px; margin-top: 12px; overflow-x: auto; }
   .nav-item { min-width: max-content; min-height: 37px; gap: 7px; padding: 0 9px; font-size: 11px; }
   .nav-item svg { width: 16px; height: 16px; }

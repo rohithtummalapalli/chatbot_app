@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import gptwLogo from "../gptw_logo.svg";
 
 const NAV_ITEMS = [
   { id: "overview", label: "Overview", icon: "overview" },
@@ -525,8 +526,8 @@ function App() {
     <div className={`app-shell ${darkMode ? "theme-dark" : ""}`}>
       <aside className="sidebar">
         <div className="brand-row">
-          <div className="brand-mark">CA</div>
-          <div className="brand-name">Chatbot Analytics<span>Conversation intelligence</span></div>
+          <img className="brand-logo" src={gptwLogo} alt="Great Place to Work" />
+          <div className="brand-name">Chatbot Analytics</div>
         </div>
         <div className="workspace-label">WORKSPACE</div>
         <nav className="main-nav" aria-label="Dashboard sections">
