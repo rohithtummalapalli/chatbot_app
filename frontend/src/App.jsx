@@ -265,7 +265,7 @@ function SummaryReport({ summary, onExport, exportBusy }) {
   const priorities = Array.isArray(report.priorities) ? report.priorities : [];
   const lowConfidenceThemes = Array.isArray(report.lowConfidenceThemes) ? report.lowConfidenceThemes : [];
   return <div className="summary-report">
-    <div className="summary-report-toolbar"><div><p className="eyebrow">SAVED ANALYSIS</p><h2>Chat Summary</h2></div><button className="summary-export-button" onClick={onExport} disabled={exportBusy}><Icon name="download" size={16} />{exportBusy ? "Preparing Word file…" : "Export Word"}</button></div>
+    <div className="summary-report-toolbar"><div><p className="eyebrow">SAVED ANALYSIS</p><h2>Chat Summary</h2></div><button className="summary-export-button" onClick={onExport} disabled={exportBusy}><Icon name="download" size={16} />{exportBusy ? "Preparing export…" : "Export"}</button></div>
     <section className="summary-report-intro"><div className="summary-report-meta"><span>{summary.startDate} to {summary.endDate}</span><span>{summary.language}</span><span>{Number(summary.conversationCount || 0).toLocaleString()} conversations</span><span>{Number(summary.lowConfidenceCount || 0).toLocaleString()} low confidence conversations</span></div><p>{report.executiveSummary || "No executive summary was returned."}</p></section>
     <section className="summary-results-grid">
       <article className="summary-result-card"><div className="summary-section-heading"><div><h3>Conversation categories</h3><p>One primary category per conversation.</p></div></div>

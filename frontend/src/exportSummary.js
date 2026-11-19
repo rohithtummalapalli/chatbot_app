@@ -1,4 +1,5 @@
 import {
+  AlignmentType,
   BorderStyle,
   Document,
   Footer,
