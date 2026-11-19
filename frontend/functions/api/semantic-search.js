@@ -59,7 +59,8 @@ export async function onRequestPost({ request, env }) {
       .sort((a, b) => b.score - a.score)
       .slice(0, 100);
     return Response.json({ matches });
-  } catch {
+  } catch (error) {
+    console.error("Workers AI semantic search failed", error);
     return Response.json({ error: "Multilingual search could not reach the language model. Try again shortly." }, { status: 502 });
   }
 }

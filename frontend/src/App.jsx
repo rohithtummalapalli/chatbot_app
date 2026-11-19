@@ -253,6 +253,7 @@ function App() {
   const [error, setError] = useState("");
   const [section, setSection] = useState("overview");
   const [searchMode, setSearchMode] = useState("semantic");
+  const [textSearchQuery, setTextSearchQuery] = useState("");
   const [semanticResult, setSemanticResult] = useState(null);
   const [semanticStatus, setSemanticStatus] = useState("");
   const [semanticLoading, setSemanticLoading] = useState(false);
@@ -343,8 +344,12 @@ function App() {
     }
   }
 
+  function applyTextSearch(query = filters.search) {
+    setTextSearchQuery(query.trim());
+  }
+
   const filtered = useMemo(() => {
-    const search = filters.search.trim().toLowerCase();
+    const search = (searchMode === "text" ? textSearchQuery : filters.search).trim().toLowerCase();
     const semanticMatches = searchMode === "semantic" && semanticResult?.query === filters.search.trim()
       ? new Map(semanticResult.matches.map((match, index) => [match.id, { index, score: match.score }]))
       : null;
@@ -385,7 +390,7 @@ function App() {
     }
     if (semanticMatches) result.sort((a, b) => semanticMatches.get(String(a.id)).index - semanticMatches.get(String(b.id)).index);
     return result;
-  }, [conversations, filters, maxDate, searchMode, semanticResult]);
+  }, [conversations, filters, maxDate, searchMode, semanticResult, textSearchQuery]);
 
   useEffect(() => setPage(0), [filters]);
 
@@ -483,6 +488,7 @@ function App() {
     setFilters({ search: "", date: "All dates", from: "", to: "", country: "All countries", source: "All sources", chatbot: "All chatbots", sentiment: "All sentiments", segment: "All users", form: "All submissions", minMessages: "Any" });
     setSemanticResult(null);
     setSemanticStatus("");
+    setTextSearchQuery("");
   }
 
   if (loadState === "loading") return <div className="loading-screen"><span className="loading-mark">CA</span><div className="loading-spinner" /><p>Preparing your analytics…</p></div>;
@@ -520,9 +526,9 @@ function App() {
 
           <section className="filter-panel" aria-label="Dashboard filters">
             <div className="filter-toolbar">
-              <div className="search-field"><Icon name="search" size={19} /><input value={filters.search} onChange={(event) => { semanticRequestId.current += 1; setSemanticLoading(false); setSemanticResult(null); setSemanticStatus(""); updateFilter("search", event.target.value); }} onKeyDown={(event) => event.key === "Enter" && searchMode === "semantic" && runSemanticSearch()} placeholder={searchMode === "semantic" ? "Search by meaning in any language…" : "Search conversations or messages…"} aria-label="Search conversations or messages" />{filters.search && <button onClick={() => { semanticRequestId.current += 1; setSemanticLoading(false); updateFilter("search", ""); setSemanticResult(null); setSemanticStatus(""); }} aria-label="Clear search"><Icon name="close" size={16} /></button>}</div>
-              <div className="search-mode-group" role="group" aria-label="Search mode"><button className={searchMode === "text" ? "active" : ""} onClick={() => setSearchMode("text")}>Text</button><button className={searchMode === "semantic" ? "active" : ""} onClick={() => setSearchMode("semantic")}>Semantic</button></div>
-              {searchMode === "semantic" && <button className="semantic-search-button" onClick={() => runSemanticSearch()} disabled={semanticLoading || !filters.search.trim()}>{semanticLoading ? <span className="search-spinner" /> : <Icon name="search" size={15} />}{semanticLoading ? "Searching" : "Search"}</button>}
+              <div className="search-field"><Icon name="search" size={19} /><input value={filters.search} onChange={(event) => { semanticRequestId.current += 1; setSemanticLoading(false); setSemanticResult(null); setSemanticStatus(""); updateFilter("search", event.target.value); }} onKeyDown={(event) => event.key === "Enter" && (searchMode === "semantic" ? runSemanticSearch() : applyTextSearch())} placeholder={searchMode === "semantic" ? "Search by meaning in any language…" : "Search conversations or messages…"} aria-label="Search conversations or messages" />{filters.search && <button onClick={() => { semanticRequestId.current += 1; setSemanticLoading(false); updateFilter("search", ""); setSemanticResult(null); setSemanticStatus(""); setTextSearchQuery(""); }} aria-label="Clear search"><Icon name="close" size={16} /></button>}</div>
+              <div className="search-mode-group" role="group" aria-label="Search mode"><button className={searchMode === "text" ? "active" : ""} onClick={() => { setSearchMode("text"); applyTextSearch(); }}>Text</button><button className={searchMode === "semantic" ? "active" : ""} onClick={() => setSearchMode("semantic")}>Semantic</button></div>
+              <button className="semantic-search-button" onClick={() => searchMode === "semantic" ? runSemanticSearch() : applyTextSearch()} disabled={(searchMode === "semantic" && semanticLoading) || !filters.search.trim()}>{searchMode === "semantic" && semanticLoading ? <span className="search-spinner" /> : <Icon name="search" size={15} />}{searchMode === "semantic" && semanticLoading ? "Searching" : "Search"}</button>
               <label className="date-select"><Icon name="calendar" size={17} /><select value={filters.date} onChange={(event) => updateFilter("date", event.target.value)} aria-label="Date window">{DATE_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select><Icon name="chevron" size={15} /></label>
               <button className={`filter-toggle ${filtersOpen ? "is-open" : ""}`} onClick={() => setFiltersOpen((value) => !value)}><Icon name="filter" size={16} /> Filters <span className="filter-count">{[filters.country !== "All countries", filters.source !== "All sources", filters.chatbot !== "All chatbots", filters.sentiment !== "All sentiments", filters.segment !== "All users", filters.form !== "All submissions", filters.minMessages !== "Any"].filter(Boolean).length || ""}</span></button>
             </div>
