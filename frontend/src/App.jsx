@@ -881,14 +881,14 @@ function App() {
 
       <div className="main-shell">
         <header className="topbar">
-          <div className="topbar-context"><span className="topbar-kicker">WORKSPACE</span><span className="topbar-separator">/</span><span>GPTW Demo Test</span></div>
+          <div className="topbar-context"><span className="topbar-kicker">WORKSPACE</span><span className="topbar-separator">/</span><span>GPTW Analytics Hub</span></div>
           <div className="topbar-right"><span className="data-live"><span className="status-dot" /> Updated from export</span><button className="sign-out-button" onClick={signOut}>Sign out</button><button className="mobile-theme-button" onClick={() => setDarkMode((value) => !value)} aria-label="Toggle color theme"><Icon name={darkMode ? "sun" : "moon"} size={18} /></button></div>
         </header>
 
         <main className="page-content">
           <section className="page-heading">
             <div><p className="eyebrow">ANALYTICS</p><h1>{title}</h1><p className="page-subtitle">{section === "summary" ? "Review recurring needs, answer quality signals, and practical improvement priorities." : section === "glossary" ? "Clear definitions for dashboard metrics and AI-generated analysis." : "Understand engagement, response quality, and how people use your chatbot."}</p></div>
-            <div className="heading-meta"><span className="source-indicator" /><span>GPTW Demo Test</span></div>
+            <div className="heading-meta"><span className="source-indicator" /><span>GPTW Analytics Hub</span></div>
           </section>
 
           {section !== "summary" && section !== "glossary" && <section className="filter-panel" aria-label="Dashboard filters">
