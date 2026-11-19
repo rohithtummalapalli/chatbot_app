@@ -12,6 +12,30 @@ import streamlit as st
 
 st.set_page_config(page_title="Chatbot Analytics", layout="wide")
 
+st.markdown("""
+<style>
+:root { --ink:#172033; --muted:#64748b; --line:#e5eaf2; --surface:#ffffff; --canvas:#f5f7fb; }
+.stApp { background:var(--canvas); color:var(--ink); font-family:Inter,ui-sans-serif,system-ui,sans-serif; }
+[data-testid="stHeader"] { background:transparent; }
+[data-testid="stSidebar"] { background:#fff; border-right:1px solid var(--line); }
+[data-testid="stSidebar"] > div:first-child { padding-top:1.5rem; }
+h1,h2,h3 { font-family:Inter,ui-sans-serif,system-ui,sans-serif !important; letter-spacing:-.035em; color:var(--ink); }
+h1 { font-size:2.1rem !important; font-weight:800 !important; }
+[data-testid="stMetric"] { background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:18px 20px; box-shadow:0 3px 12px rgba(25,38,72,.035); }
+[data-testid="stMetricLabel"] { color:var(--muted); font-weight:600; }
+[data-testid="stMetricValue"] { color:var(--ink); font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-weight:700; }
+[data-testid="stTabs"] [role="tablist"] { gap:8px; border-bottom:1px solid var(--line); }
+[data-testid="stTabs"] button[role="tab"] { border-radius:10px 10px 0 0; font-weight:600; }
+div[data-testid="stPlotlyChart"], [data-testid="stDataFrame"] { background:#fff; border:1px solid var(--line); border-radius:16px; padding:8px; }
+.hero { padding:26px 30px; margin:4px 0 22px; background:linear-gradient(120deg,#25285f 0%,#5356c9 55%,#7778ed 100%); border-radius:20px; color:#fff; box-shadow:0 14px 32px rgba(67,70,170,.18); }
+.hero-kicker { text-transform:uppercase; letter-spacing:.14em; font-size:.72rem; font-weight:700; color:#d6d8ff; margin-bottom:9px; }
+.hero-title { color:#fff; font:800 1.85rem Inter,ui-sans-serif,system-ui,sans-serif; letter-spacing:-.04em; }
+.hero-copy { color:#e7e8ff; margin-top:7px; font-size:.98rem; }
+.section-note { color:var(--muted); font-size:.9rem; margin-top:-8px; margin-bottom:18px; }
+div.stButton > button, div.stDownloadButton > button { border-radius:10px; font-weight:600; }
+</style>
+""", unsafe_allow_html=True)
+
 # ---------------------- Helpers ----------------------
 def _to_ts(s):
     try:
@@ -21,6 +45,15 @@ def _to_ts(s):
 
 def _user_key(s):
     return s.get("user_id") or s.get("anonymous_id") or None
+
+def _has_submission(value):
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "false", "no", "0", "null"}
+    return bool(value)
 
 @lru_cache(maxsize=8)
 def load_data(json_bytes: bytes):
@@ -36,6 +69,7 @@ def load_data(json_bytes: bytes):
 
         conv_rows.append({
             "conversation_id": conv_id,
+            "title": s.get("title"),
             "chatbot_id": s.get("chatbot_id"),
             "account_id": s.get("account_id"),
             "country": s.get("country"),
@@ -128,7 +162,13 @@ def df_to_csv_download(df, filename):
     csv = df.to_csv(index=False).encode("utf-8")
     st.download_button("Download " + filename, data=csv, file_name=filename, mime="text/csv")
 
-st.title("🤖 Chatbot Analytics Dashboard")
+st.markdown("""
+<div class="hero">
+  <div class="hero-kicker">Conversation intelligence</div>
+  <div class="hero-title">Chatbot analytics</div>
+  <div class="hero-copy">Explore engagement, assistant quality, and user behavior in one place.</div>
+</div>
+""", unsafe_allow_html=True)
 
 
 # Option A: local file bundled with the app
@@ -155,13 +195,21 @@ except Exception as e:
 
 # Filters
 with st.sidebar:
-    st.header("Filters")
+    st.markdown("### Explore data")
+    st.caption("Choose a date window and narrow the conversations shown across the dashboard.")
 
     # Date range
     if "created_at" in conversations_df and not conversations_df["created_at"].isna().all():
         min_date = conversations_df["created_at"].min().date()
         max_date = conversations_df["created_at"].max().date()
-        dr = st.date_input("Date range", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+        date_mode = st.selectbox("Date window", ["All dates", "Last 7 days", "Last 30 days", "Last 90 days", "Custom range"])
+        if date_mode == "Custom range":
+            dr = st.date_input("Choose dates", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+        elif date_mode == "All dates":
+            dr = (min_date, max_date)
+        else:
+            days = {"Last 7 days": 7, "Last 30 days": 30, "Last 90 days": 90}[date_mode]
+            dr = (max(min_date, max_date - pd.Timedelta(days=days - 1)), max_date)
     else:
         dr = None
 
@@ -174,15 +222,25 @@ with st.sidebar:
     bots = sorted([c for c in conversations_df["chatbot_id"].dropna().unique()])
     sel_bots = st.multiselect("Chatbot", bots, default=bots)
 
+    sentiments = sorted([str(value) for value in conversations_df["sentiment"].dropna().unique()])
+    sel_sentiments = st.multiselect("Sentiment", sentiments, default=sentiments)
+
+    form_status = st.selectbox("Form submission", ["All", "Submitted", "Not submitted"])
+
+    max_user_messages = max(1, int(conversations_df["num_user_messages"].fillna(0).max()) if not conversations_df.empty else 1)
+    user_message_range = st.slider("User messages per conversation", 0, max_user_messages, (0, max_user_messages))
+
     # user segment
     seg = st.selectbox("User segment", ["All", "New users", "Returning users"])
+    search_text = st.text_input("Search conversations", placeholder="Search message text…")
 
 # Apply filters
 df = conversations_df.copy()
 if dr is not None and not df["created_at"].isna().all():
-    start, end = dr
-    mask = (df["created_at"].dt.date >= start) & (df["created_at"].dt.date <= end)
-    df = df[mask]
+    if isinstance(dr, (tuple, list)) and len(dr) == 2:
+        start, end = dr
+        mask = (df["created_at"].dt.date >= start) & (df["created_at"].dt.date <= end)
+        df = df[mask]
 
 if sel_countries:
     df = df[df["country"].isin(sel_countries)]
@@ -190,6 +248,24 @@ if sel_sources:
     df = df[df["source"].isin(sel_sources)]
 if sel_bots:
     df = df[df["chatbot_id"].isin(sel_bots)]
+
+if sel_sentiments:
+    df = df[df["sentiment"].astype(str).isin(sel_sentiments)]
+
+has_submission = df["form_submission"].map(_has_submission)
+if form_status == "Submitted":
+    df = df[has_submission]
+elif form_status == "Not submitted":
+    df = df[~has_submission]
+
+df = df[df["num_user_messages"].fillna(0).between(user_message_range[0], user_message_range[1])]
+
+if search_text.strip():
+    matching_ids = messages_df.loc[
+        messages_df["content"].fillna("").astype(str).str.contains(search_text.strip(), case=False, regex=False),
+        "conversation_id",
+    ].unique()
+    df = df[df["conversation_id"].isin(matching_ids)]
 
 if seg != "All" and "user_key" in df:
     counts = df["user_key"].dropna().value_counts()
@@ -201,6 +277,7 @@ if seg != "All" and "user_key" in df:
 
 # ---------------------- KPIs ----------------------
 stats = kpis(df)
+st.markdown(f'<div class="section-note">Showing <b>{len(df):,}</b> of {len(conversations_df):,} conversations</div>', unsafe_allow_html=True)
 col1, col2, col3, col4, col5, col6 = st.columns(6)
 col1.metric("Sessions", stats["sessions"])
 col2.metric("Total Messages", stats["total_messages"])
@@ -217,9 +294,11 @@ col9.metric("Returning Users", stats["returning_users"])
 st.markdown("---")
 
 # ---------------------- Charts ----------------------
-tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Assistant Quality", "Users", "Data Tables"])
+tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Assistant quality", "Users", "Conversation data"])
 
 with tab1:
+    st.subheader("Usage overview")
+    st.caption("Conversation volume and message patterns for the selected filters.")
     c1, c2 = st.columns(2)
     if "date" in df:
         by_day = df.groupby("date")["conversation_id"].nunique().reset_index(name="sessions")
@@ -257,7 +336,12 @@ with tab1:
 
 
 with tab2:
-    asst = messages_df[messages_df["role"]=="assistant"]
+    st.subheader("Assistant quality")
+    st.caption("Response scores and the sources used by assistant messages.")
+    asst = messages_df[
+        messages_df["conversation_id"].isin(df["conversation_id"])
+        & (messages_df["role"] == "assistant")
+    ]
     if not asst.empty and "assistant_score" in asst:
         fig = px.histogram(asst.dropna(subset=["assistant_score"]), x="assistant_score", nbins=30, title="Assistant Score Distribution")
         st.plotly_chart(fig, use_container_width=True)
@@ -270,6 +354,8 @@ with tab2:
         st.info("No assistant messages with scores found.")
 
 with tab3:
+    st.subheader("User behavior")
+    st.caption("Repeat usage and the times conversations are most active.")
     users_df = df.copy()
     if not users_df.empty and "user_key" in users_df:
         sessions_per_user = users_df["user_key"].value_counts().reset_index()
@@ -292,6 +378,7 @@ with tab3:
 
 with tab4:
     st.subheader("Conversations")
+    st.caption("Filtered conversation records. Use the download buttons to export the current view.")
     st.dataframe(df.sort_values("created_at", ascending=False), use_container_width=True, height=400)
     df_to_csv_download(df, "conversations_filtered.csv")
 
@@ -301,4 +388,4 @@ with tab4:
     st.dataframe(msg, use_container_width=True, height=400)
     df_to_csv_download(msg, "messages_filtered.csv")
 
-st.caption("Built with Streamlit • Drop in your JSON export and use the filters to explore everything.")
+st.caption("Chatbot Analytics · Filtered views update across every tab and export.")
