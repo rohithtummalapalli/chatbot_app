@@ -236,7 +236,10 @@ with st.sidebar:
 
     # user segment
     seg = st.selectbox("User segment", ["All", "New users", "Returning users"])
-    search_text = st.text_input("Search conversations", placeholder="Search message text…")
+
+# The search widget is shown beside the main navigation below. Reading its
+# stored value here keeps the search in sync with KPIs and every data view.
+search_text = st.session_state.get("conversation_search", "")
 
 # Apply filters
 df = conversations_df.copy()
@@ -298,13 +301,22 @@ col9.metric("Returning Users", stats["returning_users"])
 st.markdown("---")
 
 # ---------------------- Charts ----------------------
-dashboard_section = st.radio(
-    "Dashboard menu",
-    ["Overview", "Assistant quality", "Users", "Conversation data"],
-    horizontal=True,
-    label_visibility="collapsed",
-    key="dashboard_section",
-)
+nav_col, search_col = st.columns([1.2, 0.8])
+with nav_col:
+    dashboard_section = st.radio(
+        "Dashboard menu",
+        ["Overview", "Assistant quality", "Users", "Conversation data"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="dashboard_section",
+    )
+with search_col:
+    st.text_input(
+        "Search conversations",
+        placeholder="Search conversations…",
+        label_visibility="collapsed",
+        key="conversation_search",
+    )
 
 if dashboard_section == "Overview":
     st.subheader("Usage overview")
