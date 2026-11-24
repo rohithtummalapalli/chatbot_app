@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node scripts/copy-data.mjs && vite --host 0.0.0.0",
     "build": "node scripts/copy-data.mjs && vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "semantic:index": "node --env-file=.env scripts/build-semantic-index.mjs"
   },
   "dependencies": {
     "docx": "^9.16.0",

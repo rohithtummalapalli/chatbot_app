@@ -30,9 +30,16 @@ For example, generate independent random values locally with `openssl rand -base
 
 ### Enable multilingual semantic search
 
-The search box uses Cloudflare Workers AI's multilingual BGE-M3 model through a Pages Function. In the Cloudflare dashboard, open this Pages project and go to **Settings → Bindings → Add → Workers AI**. Set the variable name to `AI`, save, then redeploy. Until the binding is enabled, the dashboard still supports exact text search; Semantic mode displays a setup message.
+Semantic search uses Azure OpenAI `text-embedding-3-small`. The one-time local indexing script embeds searchable JSON content and writes a private SQL file containing vectors; load that file into the existing D1 database. Search requests send only the query to Azure, then the Pages Function compares its embedding against vectors in D1. Conversation text and API keys are not sent to the browser by the indexing/search APIs.
 
-Workers AI has a free daily allocation; usage above that allocation requires a Workers Paid plan. Search sends conversation titles and user messages to the BGE-M3 model to rank across languages. See [Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/) and [BGE-M3 model details](https://developers.cloudflare.com/workers-ai/models/bge-m3/).
+1. Apply the schema to the existing `chatbot` D1 database from the repository root: `npx wrangler d1 execute chatbot --remote --file=frontend/migrations/0002_semantic_search.sql`.
+2. In the Cloudflare Pages project, confirm the existing `DB` binding points to `chatbot`. Under **Settings → Variables and Secrets**, add `AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME` with value `text-embedding-3-small`. The existing `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY` secret, and `AZURE_OPENAI_API_VERSION` used by Chat Summary are reused.
+3. From `frontend`, run `npm run build` so `public/data/conversations.json` is regenerated from the source export. In the same terminal, set `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, and `AZURE_OPENAI_API_VERSION` to the same Azure values configured in Cloudflare. Keep the key in a local environment variable; do not paste it into chat or commit it.
+4. Run `npm run semantic:index`. This sends conversation text to the Azure embedding endpoint and creates `frontend/semantic-index.sql`. The script reports the actual tokens Azure processed.
+5. From the repository root, load the generated vectors: `npx wrangler d1 execute chatbot --remote --file=frontend/semantic-index.sql`. After confirming success, delete the local `frontend/semantic-index.sql` file. It is git-ignored because it contains customer-derived vectors.
+6. Redeploy the `feature` branch. No Workers AI binding is needed for semantic search.
+
+When the JSON export changes, repeat steps 3–5 to rebuild the index. The script uses 512-dimensional vectors and short overlapping text chunks so searches can match details in long conversations. Each query is embedded once; matching and dashboard metrics then use the full set of scored conversation IDs.
 
 ### Chat Summary setup
 

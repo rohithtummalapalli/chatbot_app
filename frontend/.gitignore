@@ -1,3 +1,7 @@
 node_modules/
 dist/
+.env
+.env.*
+!.env.example
 public/data/conversations.json
+semantic-index.sql

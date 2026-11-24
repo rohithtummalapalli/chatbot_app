@@ -522,18 +522,12 @@ function App() {
     const requestId = ++semanticRequestId.current;
     const searchStartedAt = performance.now();
     setSemanticLoading(true);
-    setSemanticStatus("Searching all conversation data across languages in batches…");
+    setSemanticStatus("Searching the indexed conversation data across languages…");
     try {
-      const documents = conversations.map((item) => {
-        return {
-          id: String(item.id),
-          text: JSON.stringify({ dataset: datasetMetadata, conversation: item }),
-        };
-      });
       const response = await fetch("/api/semantic-search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: normalizedQuery, documents }),
+        body: JSON.stringify({ query: normalizedQuery }),
       });
       const result = await response.json();
       if (!response.ok) {
@@ -544,7 +538,7 @@ function App() {
       const matches = result.matches || [];
       const elapsedSeconds = ((performance.now() - searchStartedAt) / 1000).toFixed(1);
       setSemanticResult({ query: normalizedQuery, matches });
-      setSemanticStatus(`Searched all ${result.conversationsSearched ?? documents.length} conversations across ${result.batchesSearched || 1} batches. Scored ${matches.length.toLocaleString()} candidate conversations. Took ${elapsedSeconds} seconds.`);
+      setSemanticStatus(`Searched all ${result.conversationsSearched ?? conversations.length} conversations using ${(result.chunksSearched || 0).toLocaleString()} indexed text chunks. Scored ${matches.length.toLocaleString()} conversations. Took ${elapsedSeconds} seconds.`);
     } catch (searchError) {
       if (requestId === semanticRequestId.current) setSemanticStatus(searchError.message || "Semantic search is unavailable. Try text search instead.");
     } finally {

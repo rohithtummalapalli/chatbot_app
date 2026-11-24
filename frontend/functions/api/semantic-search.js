@@ -1,131 +1,120 @@
-const MODEL = "@cf/baai/bge-m3";
-const MAX_REQUEST_BYTES = 12_000_000;
-const MAX_DOCUMENTS = 10_000;
-const MAX_CONTEXT_LENGTH = 400;
-const CONTEXT_OVERLAP = 80;
-const MAX_CONTEXTS_PER_BATCH = 1_200;
-const MAX_CONTEXT_TOTAL = 150_000;
-const AI_CONCURRENCY = 4;
+const EMBEDDING_DIMENSIONS = 512;
+const MAX_QUERY_LENGTH = 500;
 
-function splitDocument(document) {
-  const text = document.text;
-  const contexts = [];
-  let start = 0;
-  while (start < text.length) {
-    let end = Math.min(start + MAX_CONTEXT_LENGTH, text.length);
-    if (
-      end < text.length
-      && text.charCodeAt(end - 1) >= 0xd800
-      && text.charCodeAt(end - 1) <= 0xdbff
-      && text.charCodeAt(end) >= 0xdc00
-      && text.charCodeAt(end) <= 0xdfff
-    ) end += 1;
-    const context = text.slice(start, end).trim();
-    if (context) contexts.push({ id: document.id, text: context });
-    if (end === text.length) break;
-    start = end - CONTEXT_OVERLAP;
-    if (
-      start > 0
-      && text.charCodeAt(start - 1) >= 0xd800
-      && text.charCodeAt(start - 1) <= 0xdbff
-      && text.charCodeAt(start) >= 0xdc00
-      && text.charCodeAt(start) <= 0xdfff
-    ) start -= 1;
-  }
-  return contexts;
+function errorResponse(message, status = 400) {
+  return Response.json({ error: message }, {
+    status,
+    headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+  });
 }
 
-function makeBatches(documents) {
-  const batches = [];
-  let batch = [];
-  let batchCharacters = 0;
+function base64ToFloat32(base64, expectedDimensions) {
+  const binary = atob(base64);
+  if (binary.length !== expectedDimensions * Float32Array.BYTES_PER_ELEMENT) return null;
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Float32Array(bytes.buffer);
+}
 
-  function flush() {
-    if (batch.length) batches.push(batch);
-    batch = [];
-    batchCharacters = 0;
+async function createQueryEmbedding(query, env) {
+  const endpoint = String(env.AZURE_OPENAI_ENDPOINT || "").trim().replace(/\/+$/, "");
+  const apiKey = String(env.AZURE_OPENAI_API_KEY || "");
+  const apiVersion = String(env.AZURE_OPENAI_API_VERSION || "").trim();
+  const deployment = String(env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME || "").trim();
+  if (!endpoint || !apiKey || !apiVersion || !deployment) {
+    throw new Error("Azure embeddings are not configured. Add the embedding deployment name and Azure credentials to Pages settings.");
   }
 
-  for (const document of documents) {
-    for (const context of splitDocument(document)) {
-      if (
-        batch.length >= MAX_CONTEXTS_PER_BATCH
-        || batchCharacters + context.text.length > MAX_CONTEXT_TOTAL
-      ) flush();
-      batch.push(context);
-      batchCharacters += context.text.length;
-    }
+  let url;
+  try {
+    url = new URL(`${endpoint}/openai/deployments/${encodeURIComponent(deployment)}/embeddings?api-version=${encodeURIComponent(apiVersion)}`);
+    if (url.protocol !== "https:") throw new Error("HTTPS required");
+  } catch {
+    throw new Error("Azure OpenAI endpoint configuration is invalid.");
   }
-  flush();
-  return batches;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "api-key": apiKey },
+    body: JSON.stringify({ input: query, dimensions: EMBEDDING_DIMENSIONS }),
+  });
+  if (!response.ok) {
+    throw new Error(`Azure embeddings returned HTTP ${response.status}. Check the embedding deployment, API version, and quota.`);
+  }
+  const result = await response.json();
+  const embedding = result?.data?.[0]?.embedding;
+  if (!Array.isArray(embedding) || embedding.length !== EMBEDDING_DIMENSIONS || !embedding.every(Number.isFinite)) {
+    throw new Error("Azure embeddings returned a vector with an unexpected size.");
+  }
+  return embedding;
+}
+
+function cosineSimilarity(left, right) {
+  let dot = 0;
+  let leftNorm = 0;
+  let rightNorm = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    dot += a * b;
+    leftNorm += a * a;
+    rightNorm += b * b;
+  }
+  if (!leftNorm || !rightNorm) return -1;
+  return dot / Math.sqrt(leftNorm * rightNorm);
 }
 
 export async function onRequestPost({ request, env }) {
-  if (!env.AI) {
-    return Response.json(
-      { error: "Multilingual search is not configured. Add a Workers AI binding named AI to this Pages project." },
-      { status: 503 },
-    );
-  }
-
-  const rawBody = await request.text();
-  if (new TextEncoder().encode(rawBody).byteLength > MAX_REQUEST_BYTES) {
-    return Response.json({ error: "The conversation data is too large for one search request." }, { status: 413 });
-  }
-
   let body;
   try {
-    body = JSON.parse(rawBody);
+    body = await request.json();
   } catch {
-    return Response.json({ error: "Invalid search request." }, { status: 400 });
+    return errorResponse("Invalid search request.");
   }
 
-  const query = typeof body.query === "string" ? body.query.trim().slice(0, 200) : "";
-  const documents = Array.isArray(body.documents) ? body.documents : [];
-  if (query.length < 2 || !documents.length || documents.length > MAX_DOCUMENTS) {
-    return Response.json({ error: "Enter a search phrase and try again." }, { status: 400 });
-  }
-
-  const validDocuments = documents.filter(
-    (document) => typeof document?.id === "string" && typeof document?.text === "string" && document.text.length,
-  );
-  if (!validDocuments.length) return Response.json({ matches: [] });
-
-  const batches = makeBatches(validDocuments);
-  const bestScoreById = new Map();
+  const query = typeof body?.query === "string" ? body.query.trim().slice(0, MAX_QUERY_LENGTH) : "";
+  if (query.length < 2) return errorResponse("Enter at least two characters to search.");
+  if (!env.DB) return errorResponse("Semantic search is not configured. Add the D1 binding named DB.", 503);
 
   try {
-    for (let offset = 0; offset < batches.length; offset += AI_CONCURRENCY) {
-      const currentBatches = batches.slice(offset, offset + AI_CONCURRENCY);
-      const results = await Promise.all(currentBatches.map((batch) => env.AI.run(MODEL, {
-        query,
-        contexts: batch.map((context) => ({ text: context.text })),
-        truncate_inputs: true,
-      })));
-
-      results.forEach((result, batchIndex) => {
-        const batch = currentBatches[batchIndex];
-        for (const item of result?.response || []) {
-          if (!Number.isInteger(item.id) || !Number.isFinite(item.score) || !batch[item.id]) continue;
-          const id = batch[item.id].id;
-          const previous = bestScoreById.get(id);
-          if (previous == null || item.score > previous) bestScoreById.set(id, item.score);
-        }
-      });
+    const meta = await env.DB.prepare(
+      "SELECT model, dimensions, conversation_count, chunk_count FROM semantic_index_meta WHERE id = 1",
+    ).first();
+    if (!meta) return errorResponse("The semantic index is not ready. Generate and load the conversation embeddings first.", 503);
+    if (Number(meta.dimensions) !== EMBEDDING_DIMENSIONS) {
+      return errorResponse("The semantic index uses a different vector size. Rebuild it with the current embedding settings.", 503);
+    }
+    const deployment = String(env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME || "").trim();
+    if (String(meta.model) !== deployment) {
+      return errorResponse("The semantic index was generated with a different embedding deployment. Rebuild it with the configured deployment.", 503);
     }
 
-    const matches = [...bestScoreById.entries()]
-      .map(([id, score]) => ({ id, score }))
+    const embedding = await createQueryEmbedding(query, env);
+    const { results = [] } = await env.DB.prepare(
+      "SELECT conversation_id, vector FROM semantic_embeddings",
+    ).all();
+    if (!results.length) return errorResponse("The semantic index is empty. Generate and load the conversation embeddings first.", 503);
+
+    const bestByConversation = new Map();
+    for (const row of results) {
+      const vector = base64ToFloat32(row.vector, EMBEDDING_DIMENSIONS);
+      if (!vector) continue;
+      const cosine = cosineSimilarity(embedding, vector);
+      const previous = bestByConversation.get(row.conversation_id);
+      if (previous == null || cosine > previous) bestByConversation.set(row.conversation_id, cosine);
+    }
+
+    const matches = [...bestByConversation.entries()]
+      .map(([id, cosine]) => ({ id, score: Math.max(0, Math.min(1, (cosine + 1) / 2)) }))
       .sort((a, b) => b.score - a.score);
-    return Response.json({ matches, conversationsSearched: validDocuments.length, batchesSearched: batches.length });
-  } catch (error) {
-    console.error("Workers AI semantic search failed", error);
-    const details = String(error?.message || error || "Unknown Workers AI error")
-      .replace(/\s+/g, " ")
-      .slice(0, 240);
     return Response.json({
-      error: "Multilingual search could not complete across all conversation data. Try again shortly.",
-      details: `Cloudflare AI: ${details}`,
-    }, { status: 502 });
+      matches,
+      conversationsSearched: Number(meta.conversation_count),
+      chunksSearched: results.length,
+      model: meta.model,
+    }, { headers: { "Cache-Control": "no-store", Pragma: "no-cache" } });
+  } catch (error) {
+    console.error("Azure semantic search failed", String(error?.message || error).slice(0, 240));
+    return errorResponse(error?.message || "Semantic search could not reach Azure. Check the deployment configuration and try again.", 502);
   }
 }
