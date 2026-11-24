@@ -202,6 +202,9 @@ tbody tr:hover { background: color-mix(in srgb, var(--sidebar) 58%, var(--surfac
 .summary-generate-button { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 8px; min-height: 38px; padding: 0 14px; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; cursor: pointer; }
 .summary-generate-button:disabled { cursor: default; opacity: .58; }
 .summary-explainer { margin: 13px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.summary-duplicate-note { display: flex; align-items: center; gap: 12px; padding: 12px 15px; border-radius: 8px; background: var(--accent); color: #fff; }
+.summary-duplicate-note strong { flex: 0 0 auto; padding-right: 12px; border-right: 1px solid rgb(255 255 255 / 58%); font-size: 10px; font-weight: 800; letter-spacing: .04em; }
+.summary-duplicate-note p { margin: 0; font-size: 11px; line-height: 1.55; }
 .summary-status { margin: 11px 0 0; color: var(--accent-ink); font-size: 11px; line-height: 1.5; }
 .summary-status.has-error { color: var(--accent-ink); }
 .summary-empty { display: grid; min-height: 260px; align-content: center; justify-items: center; padding: 24px; text-align: center; }

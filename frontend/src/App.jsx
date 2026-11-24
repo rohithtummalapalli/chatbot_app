@@ -360,6 +360,7 @@ function DashboardLogin({ password, setPassword, onSubmit, busy, error }) {
 
 function App() {
   const [conversations, setConversations] = useState([]);
+  const [datasetMetadata, setDatasetMetadata] = useState({});
   const [loadState, setLoadState] = useState("loading");
   const [error, setError] = useState("");
   const [section, setSection] = useState("overview");
@@ -434,6 +435,7 @@ function App() {
         if (!response.ok || !result.authenticated) {
           setAuthenticated(false);
           setConversations([]);
+          setDatasetMetadata({});
           setSavedSummaries([]);
           setActiveSummary(null);
           setLoginError("Your session expired. Sign in again to continue.");
@@ -441,6 +443,7 @@ function App() {
       } catch {
         setAuthenticated(false);
         setConversations([]);
+        setDatasetMetadata({});
         setSavedSummaries([]);
         setActiveSummary(null);
         setLoginError("Could not verify your session. Sign in again to continue.");
@@ -457,6 +460,8 @@ function App() {
         return response.json();
       })
       .then((raw) => {
+        const metadata = Object.fromEntries(Object.entries(raw || {}).filter(([key]) => key !== "conversations"));
+        setDatasetMetadata(metadata);
         setConversations(normalizeConversations(raw));
         setLoadState("ready");
       })
@@ -496,6 +501,13 @@ function App() {
     sentiments: [...new Set(conversations.map((item) => item.sentiment).filter(Boolean).map(displayValue))].sort(),
   }), [conversations]);
 
+  const searchableConversationData = useMemo(() => new Map(
+    conversations.map((item) => [
+      String(item.id),
+      JSON.stringify({ dataset: datasetMetadata, conversation: item }).toLowerCase(),
+    ]),
+  ), [conversations, datasetMetadata]);
+
   async function runSemanticSearch(query = filters.search) {
     const normalizedQuery = query.trim();
     if (normalizedQuery.length < 2) {
@@ -504,17 +516,13 @@ function App() {
     }
     const requestId = ++semanticRequestId.current;
     setSemanticLoading(true);
-    setSemanticStatus("Searching conversations across languages…");
+    setSemanticStatus("Searching all conversation data across languages in batches…");
     try {
       const documents = conversations.map((item) => {
-        const userText = item.messages
-          .filter((message) => message.role === "user" && typeof message.content === "string")
-          .map((message) => message.content.replace(/\s+/g, " ").trim())
-          .filter(Boolean)
-          .join(" ");
-        let text = [item.title, userText].filter(Boolean).join(". ");
-        if (text.length > 400) text = `${text.slice(0, 250)} … ${text.slice(-145)}`;
-        return { id: String(item.id), text };
+        return {
+          id: String(item.id),
+          text: JSON.stringify({ dataset: datasetMetadata, conversation: item }),
+        };
       });
       const response = await fetch("/api/semantic-search", {
         method: "POST",
@@ -528,7 +536,7 @@ function App() {
       }
       if (requestId !== semanticRequestId.current) return;
       setSemanticResult({ query: normalizedQuery, matches: result.matches || [] });
-      setSemanticStatus(`Found ${result.matches?.length || 0} matching conversations.`);
+      setSemanticStatus(`Searched all ${result.conversationsSearched ?? documents.length} conversations across ${result.batchesSearched || 1} batches. Showing up to 100 results ranked by relevance.`);
     } catch (searchError) {
       if (requestId === semanticRequestId.current) setSemanticStatus(searchError.message || "Semantic search is unavailable. Try text search instead.");
     } finally {
@@ -576,7 +584,7 @@ function App() {
       }
       if (search) {
         if (semanticMatches) return semanticMatches.has(String(item.id));
-        const searchable = [item.id, item.title, item.country, item.source, ...item.messages.map((message) => typeof message.content === "string" ? message.content : JSON.stringify(message.content))].join(" ").toLowerCase();
+        const searchable = searchableConversationData.get(String(item.id)) || "";
         if (!searchable.includes(search)) return false;
       }
       return true;
@@ -590,9 +598,12 @@ function App() {
         return filters.segment === "Returning users" ? isReturning : !isReturning;
       });
     }
-    if (semanticMatches) result.sort((a, b) => semanticMatches.get(String(a.id)).index - semanticMatches.get(String(b.id)).index);
+    if (semanticMatches) {
+      result.sort((a, b) => semanticMatches.get(String(a.id)).index - semanticMatches.get(String(b.id)).index);
+      result = result.slice(0, 100);
+    }
     return result;
-  }, [conversations, filters, maxDate, searchMode, semanticResult, textSearchQuery]);
+  }, [conversations, filters, maxDate, searchMode, semanticResult, searchableConversationData, textSearchQuery]);
 
   useEffect(() => setPage(0), [filters]);
 
@@ -778,6 +789,7 @@ function App() {
     finally {
       setAuthenticated(false);
       setConversations([]);
+      setDatasetMetadata({});
       setSavedSummaries([]);
       setActiveSummary(null);
       setLoadState("loading");
@@ -987,6 +999,10 @@ function App() {
                   <p className="summary-explainer">The report groups similar customer needs, counts categories, suggests high impact improvements, and reviews chats containing responses in the lowest confidence score decile. Chat text is sent to your Azure OpenAI deployment for analysis; only the finished report and date range are saved in D1.</p>
                   {summaryStatus && <p className={`summary-status ${summaryStatus.includes("could not") || summaryStatus.includes("failed") || summaryStatus.includes("not configured") || summaryStatus.includes("No Chat") || summaryStatus.includes("Choose") ? "has-error" : ""}`} role="status">{summaryStatus}</p>}
                 </section>
+                <aside className="summary-duplicate-note" role="note" aria-label="Check for an existing report">
+                  <strong>NOTE</strong>
+                  <p>Before generating a report, check Saved reports for the selected date range. If a report already exists, open it instead of generating a duplicate.</p>
+                </aside>
                 {activeSummary ? <SummaryReport summary={activeSummary} onExport={exportSummaryWord} exportBusy={summaryExportBusy} /> : !summaryBusy && <section className="summary-empty card-surface"><span className="summary-empty-mark"><Icon name="summary" size={23} /></span><h3>Your summary will appear here</h3><p>Choose a date range and report language, then generate the report.</p></section>}
               </div>
               <aside className="saved-summary-panel card-surface"><div className="summary-section-heading"><div><h2>Saved reports</h2><p>Reopen a report without another AI run.</p></div><span className="saved-summary-count">{savedSummaries.length}</span></div>

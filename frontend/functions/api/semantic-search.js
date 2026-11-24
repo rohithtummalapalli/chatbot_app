@@ -1,8 +1,50 @@
 const MODEL = "@cf/baai/bge-m3";
-const MAX_REQUEST_BYTES = 300_000;
-const MAX_CONTEXTS = 1_200;
+const MAX_REQUEST_BYTES = 12_000_000;
+const MAX_DOCUMENTS = 10_000;
 const MAX_CONTEXT_LENGTH = 400;
-const MAX_CONTEXT_TOTAL = 180_000;
+const CONTEXT_OVERLAP = 80;
+const MAX_CONTEXTS_PER_BATCH = 1_200;
+const MAX_CONTEXT_TOTAL = 150_000;
+const AI_CONCURRENCY = 4;
+
+function splitDocument(document) {
+  const text = document.text;
+  const contexts = [];
+  let start = 0;
+  while (start < text.length) {
+    const end = Math.min(start + MAX_CONTEXT_LENGTH, text.length);
+    const context = text.slice(start, end).trim();
+    if (context) contexts.push({ id: document.id, text: context });
+    if (end === text.length) break;
+    start = end - CONTEXT_OVERLAP;
+  }
+  return contexts;
+}
+
+function makeBatches(documents) {
+  const batches = [];
+  let batch = [];
+  let batchCharacters = 0;
+
+  function flush() {
+    if (batch.length) batches.push(batch);
+    batch = [];
+    batchCharacters = 0;
+  }
+
+  for (const document of documents) {
+    for (const context of splitDocument(document)) {
+      if (
+        batch.length >= MAX_CONTEXTS_PER_BATCH
+        || batchCharacters + context.text.length > MAX_CONTEXT_TOTAL
+      ) flush();
+      batch.push(context);
+      batchCharacters += context.text.length;
+    }
+  }
+  flush();
+  return batches;
+}
 
 export async function onRequestPost({ request, env }) {
   if (!env.AI) {
@@ -13,8 +55,8 @@ export async function onRequestPost({ request, env }) {
   }
 
   const rawBody = await request.text();
-  if (rawBody.length > MAX_REQUEST_BYTES) {
-    return Response.json({ error: "The search request is too large." }, { status: 413 });
+  if (new TextEncoder().encode(rawBody).byteLength > MAX_REQUEST_BYTES) {
+    return Response.json({ error: "The conversation data is too large for one search request." }, { status: 413 });
   }
 
   let body;
@@ -26,46 +68,49 @@ export async function onRequestPost({ request, env }) {
 
   const query = typeof body.query === "string" ? body.query.trim().slice(0, 200) : "";
   const documents = Array.isArray(body.documents) ? body.documents : [];
-  if (query.length < 2 || !documents.length || documents.length > MAX_CONTEXTS) {
+  if (query.length < 2 || !documents.length || documents.length > MAX_DOCUMENTS) {
     return Response.json({ error: "Enter a search phrase and try again." }, { status: 400 });
   }
 
-  let totalCharacters = 0;
-  const ids = [];
-  const contexts = [];
-  for (const document of documents) {
-    if (typeof document?.id !== "string" || typeof document?.text !== "string") continue;
-    const context = document.text.trim().slice(0, MAX_CONTEXT_LENGTH);
-    if (!context) continue;
-    totalCharacters += context.length;
-    if (totalCharacters > MAX_CONTEXT_TOTAL) {
-      return Response.json({ error: "The conversation export is too large for semantic search." }, { status: 413 });
-    }
-    ids.push(document.id);
-    contexts.push({ text: context });
-  }
+  const validDocuments = documents.filter(
+    (document) => typeof document?.id === "string" && typeof document?.text === "string" && document.text.length,
+  );
+  if (!validDocuments.length) return Response.json({ matches: [] });
 
-  if (!contexts.length) return Response.json({ matches: [] });
+  const batches = makeBatches(validDocuments);
+  const bestScoreById = new Map();
 
   try {
-    const result = await env.AI.run(MODEL, {
-      query,
-      contexts,
-      truncate_inputs: true,
-    });
-    const matches = (result?.response || [])
-      .filter((item) => Number.isInteger(item.id) && Number.isFinite(item.score) && ids[item.id])
-      .map((item) => ({ id: ids[item.id], score: item.score }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 100);
-    return Response.json({ matches });
+    for (let offset = 0; offset < batches.length; offset += AI_CONCURRENCY) {
+      const currentBatches = batches.slice(offset, offset + AI_CONCURRENCY);
+      const results = await Promise.all(currentBatches.map((batch) => env.AI.run(MODEL, {
+        query,
+        contexts: batch.map((context) => ({ text: context.text })),
+        truncate_inputs: true,
+      })));
+
+      results.forEach((result, batchIndex) => {
+        const batch = currentBatches[batchIndex];
+        for (const item of result?.response || []) {
+          if (!Number.isInteger(item.id) || !Number.isFinite(item.score) || !batch[item.id]) continue;
+          const id = batch[item.id].id;
+          const previous = bestScoreById.get(id);
+          if (previous == null || item.score > previous) bestScoreById.set(id, item.score);
+        }
+      });
+    }
+
+    const matches = [...bestScoreById.entries()]
+      .map(([id, score]) => ({ id, score }))
+      .sort((a, b) => b.score - a.score);
+    return Response.json({ matches, conversationsSearched: validDocuments.length, batchesSearched: batches.length });
   } catch (error) {
     console.error("Workers AI semantic search failed", error);
     const details = String(error?.message || error || "Unknown Workers AI error")
       .replace(/\s+/g, " ")
       .slice(0, 240);
     return Response.json({
-      error: "Multilingual search could not reach the language model. Try again shortly.",
+      error: "Multilingual search could not complete across all conversation data. Try again shortly.",
       details: `Cloudflare AI: ${details}`,
     }, { status: 502 });
   }
