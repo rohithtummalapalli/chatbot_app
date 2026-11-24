@@ -12,11 +12,25 @@ function splitDocument(document) {
   const contexts = [];
   let start = 0;
   while (start < text.length) {
-    const end = Math.min(start + MAX_CONTEXT_LENGTH, text.length);
+    let end = Math.min(start + MAX_CONTEXT_LENGTH, text.length);
+    if (
+      end < text.length
+      && text.charCodeAt(end - 1) >= 0xd800
+      && text.charCodeAt(end - 1) <= 0xdbff
+      && text.charCodeAt(end) >= 0xdc00
+      && text.charCodeAt(end) <= 0xdfff
+    ) end += 1;
     const context = text.slice(start, end).trim();
     if (context) contexts.push({ id: document.id, text: context });
     if (end === text.length) break;
     start = end - CONTEXT_OVERLAP;
+    if (
+      start > 0
+      && text.charCodeAt(start - 1) >= 0xd800
+      && text.charCodeAt(start - 1) <= 0xdbff
+      && text.charCodeAt(start) >= 0xdc00
+      && text.charCodeAt(start) <= 0xdfff
+    ) start -= 1;
   }
   return contexts;
 }
