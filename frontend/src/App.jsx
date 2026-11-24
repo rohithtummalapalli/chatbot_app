@@ -515,6 +515,7 @@ function App() {
       return;
     }
     const requestId = ++semanticRequestId.current;
+    const searchStartedAt = performance.now();
     setSemanticLoading(true);
     setSemanticStatus("Searching all conversation data across languages in batches…");
     try {
@@ -535,8 +536,10 @@ function App() {
         throw new Error([result.error || "Semantic search failed.", details].filter(Boolean).join(" "));
       }
       if (requestId !== semanticRequestId.current) return;
-      setSemanticResult({ query: normalizedQuery, matches: result.matches || [] });
-      setSemanticStatus(`Searched all ${result.conversationsSearched ?? documents.length} conversations across ${result.batchesSearched || 1} batches. Showing up to 100 results ranked by relevance.`);
+      const matches = result.matches || [];
+      const elapsedSeconds = ((performance.now() - searchStartedAt) / 1000).toFixed(1);
+      setSemanticResult({ query: normalizedQuery, matches });
+      setSemanticStatus(`Searched all ${result.conversationsSearched ?? documents.length} conversations across ${result.batchesSearched || 1} batches. Showing ${matches.length.toLocaleString()} results ranked by relevance. Took ${elapsedSeconds} seconds.`);
     } catch (searchError) {
       if (requestId === semanticRequestId.current) setSemanticStatus(searchError.message || "Semantic search is unavailable. Try text search instead.");
     } finally {
@@ -600,7 +603,6 @@ function App() {
     }
     if (semanticMatches) {
       result.sort((a, b) => semanticMatches.get(String(a.id)).index - semanticMatches.get(String(b.id)).index);
-      result = result.slice(0, 100);
     }
     return result;
   }, [conversations, filters, maxDate, searchMode, semanticResult, searchableConversationData, textSearchQuery]);
