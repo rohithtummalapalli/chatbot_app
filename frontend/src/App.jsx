@@ -407,7 +407,7 @@ function App() {
     segment: "All users",
     form: "All submissions",
     minMessages: "Any",
-    minRelevance: 35,
+    minRelevance: 25,
     scoreMin: "",
     scoreMax: "",
   });
@@ -707,7 +707,7 @@ function App() {
   function resetFilters() {
     semanticRequestId.current += 1;
     setSemanticLoading(false);
-    setFilters({ search: "", date: "All dates", from: "", to: "", country: "All countries", source: "Chat Bubble/Iframe", chatbot: "All chatbots", sentiment: "All sentiments", segment: "All users", form: "All submissions", minMessages: "Any", minRelevance: 35, scoreMin: "", scoreMax: "" });
+    setFilters({ search: "", date: "All dates", from: "", to: "", country: "All countries", source: "Chat Bubble/Iframe", chatbot: "All chatbots", sentiment: "All sentiments", segment: "All users", form: "All submissions", minMessages: "Any", minRelevance: 25, scoreMin: "", scoreMax: "" });
     setSemanticResult(null);
     setSemanticStatus("");
     setTextSearchQuery("");
@@ -889,8 +889,8 @@ function App() {
           {NAV_ITEMS.map((item) => <button key={item.id} className={`nav-item ${section === item.id ? "active" : ""}`} onClick={() => setSection(item.id)} aria-current={section === item.id ? "page" : undefined}><Icon name={item.icon} /><span>{item.label}</span>{section === item.id && <span className="nav-active-dot" />}</button>)}
         </nav>
         <div className="sidebar-footer">
-          <div className="sidebar-status"><span className="status-dot" /><span>Live dataset</span></div>
-          <p>{conversations.length.toLocaleString()} conversations loaded</p>
+          <div className="sidebar-status"><span>Fixed JSON export</span></div>
+          <p>{conversations.length.toLocaleString()} conversations loaded<br />Data through {maxDate ? new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${maxDate}T00:00:00Z`)) : "—"}</p>
           <button className="theme-toggle" onClick={() => setDarkMode((value) => !value)}><Icon name={darkMode ? "sun" : "moon"} size={17} /><span>{darkMode ? "Light appearance" : "Dark appearance"}</span></button>
         </div>
       </aside>
@@ -913,7 +913,7 @@ function App() {
               <div className="search-mode-group" role="group" aria-label="Search mode"><button className={searchMode === "text" ? "active" : ""} onClick={() => { setSearchMode("text"); applyTextSearch(); }}>Text</button><button className={searchMode === "semantic" ? "active" : ""} onClick={() => setSearchMode("semantic")}>Semantic</button></div>
               <button className="semantic-search-button" onClick={() => searchMode === "semantic" ? runSemanticSearch() : applyTextSearch()} disabled={(searchMode === "semantic" && semanticLoading) || !filters.search.trim()}>{searchMode === "semantic" && semanticLoading ? <span className="search-spinner" /> : <Icon name="search" size={15} />}{searchMode === "semantic" && semanticLoading ? "Searching" : "Search"}</button>
               <label className="date-select"><Icon name="calendar" size={17} /><select value={filters.date} onChange={(event) => updateFilter("date", event.target.value)} aria-label="Date window">{DATE_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select><Icon name="chevron" size={15} /></label>
-              <button className={`filter-toggle ${filtersOpen ? "is-open" : ""}`} onClick={() => setFiltersOpen((value) => !value)}><Icon name="filter" size={16} /> Filters <span className="filter-count">{[filters.country !== "All countries", filters.source !== "All sources", filters.chatbot !== "All chatbots", filters.sentiment !== "All sentiments", filters.segment !== "All users", filters.form !== "All submissions", filters.minMessages !== "Any", filters.scoreMin !== "" || filters.scoreMax !== "", searchMode === "semantic" && Boolean(filters.search.trim()) && Number(filters.minRelevance) !== 35].filter(Boolean).length || ""}</span></button>
+              <button className={`filter-toggle ${filtersOpen ? "is-open" : ""}`} onClick={() => setFiltersOpen((value) => !value)}><Icon name="filter" size={16} /> Filters <span className="filter-count">{[filters.country !== "All countries", filters.source !== "All sources", filters.chatbot !== "All chatbots", filters.sentiment !== "All sentiments", filters.segment !== "All users", filters.form !== "All submissions", filters.minMessages !== "Any", filters.scoreMin !== "" || filters.scoreMax !== "", searchMode === "semantic" && Boolean(filters.search.trim()) && Number(filters.minRelevance) !== 25].filter(Boolean).length || ""}</span></button>
             </div>
             {searchMode === "semantic" && semanticStatus && <div className={`semantic-status ${semanticStatus.includes("could not") || semanticStatus.includes("not configured") || semanticStatus.includes("too large") ? "has-error" : ""}`} role="status">{semanticStatus}</div>}
             {filters.date === "Custom range" && <div className="custom-date-row"><label>From<input type="date" min={minDate} max={maxDate} value={filters.from} onChange={(event) => updateFilter("from", event.target.value)} /></label><label>To<input type="date" min={minDate} max={maxDate} value={filters.to} onChange={(event) => updateFilter("to", event.target.value)} /></label></div>}
