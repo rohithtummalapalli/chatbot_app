@@ -407,7 +407,7 @@ function App() {
     segment: "All users",
     form: "All submissions",
     minMessages: "Any",
-    minRelevance: 70,
+    minRelevance: 50,
     scoreMin: "",
     scoreMax: "",
   });
@@ -538,7 +538,8 @@ function App() {
       const matches = result.matches || [];
       const elapsedSeconds = ((performance.now() - searchStartedAt) / 1000).toFixed(1);
       setSemanticResult({ query: normalizedQuery, matches });
-      setSemanticStatus(`Searched all ${result.conversationsSearched ?? conversations.length} conversations using ${(result.chunksSearched || 0).toLocaleString()} indexed text chunks. Scored ${matches.length.toLocaleString()} conversations. Took ${elapsedSeconds} seconds.`);
+      const aboveRelevanceThreshold = matches.filter((match) => normalizedScorePercent(match.score) >= Number(filters.minRelevance)).length;
+      setSemanticStatus(`Searched all ${result.conversationsSearched ?? conversations.length} conversations using ${(result.chunksSearched || 0).toLocaleString()} indexed text chunks. ${aboveRelevanceThreshold.toLocaleString()} conversations meet the similarity threshold. Took ${elapsedSeconds} seconds.`);
     } catch (searchError) {
       if (requestId === semanticRequestId.current) setSemanticStatus(searchError.message || "Semantic search is unavailable. Try text search instead.");
     } finally {
@@ -706,7 +707,7 @@ function App() {
   function resetFilters() {
     semanticRequestId.current += 1;
     setSemanticLoading(false);
-    setFilters({ search: "", date: "All dates", from: "", to: "", country: "All countries", source: "Chat Bubble/Iframe", chatbot: "All chatbots", sentiment: "All sentiments", segment: "All users", form: "All submissions", minMessages: "Any", minRelevance: 70, scoreMin: "", scoreMax: "" });
+    setFilters({ search: "", date: "All dates", from: "", to: "", country: "All countries", source: "Chat Bubble/Iframe", chatbot: "All chatbots", sentiment: "All sentiments", segment: "All users", form: "All submissions", minMessages: "Any", minRelevance: 50, scoreMin: "", scoreMax: "" });
     setSemanticResult(null);
     setSemanticStatus("");
     setTextSearchQuery("");
@@ -912,7 +913,7 @@ function App() {
               <div className="search-mode-group" role="group" aria-label="Search mode"><button className={searchMode === "text" ? "active" : ""} onClick={() => { setSearchMode("text"); applyTextSearch(); }}>Text</button><button className={searchMode === "semantic" ? "active" : ""} onClick={() => setSearchMode("semantic")}>Semantic</button></div>
               <button className="semantic-search-button" onClick={() => searchMode === "semantic" ? runSemanticSearch() : applyTextSearch()} disabled={(searchMode === "semantic" && semanticLoading) || !filters.search.trim()}>{searchMode === "semantic" && semanticLoading ? <span className="search-spinner" /> : <Icon name="search" size={15} />}{searchMode === "semantic" && semanticLoading ? "Searching" : "Search"}</button>
               <label className="date-select"><Icon name="calendar" size={17} /><select value={filters.date} onChange={(event) => updateFilter("date", event.target.value)} aria-label="Date window">{DATE_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select><Icon name="chevron" size={15} /></label>
-              <button className={`filter-toggle ${filtersOpen ? "is-open" : ""}`} onClick={() => setFiltersOpen((value) => !value)}><Icon name="filter" size={16} /> Filters <span className="filter-count">{[filters.country !== "All countries", filters.source !== "All sources", filters.chatbot !== "All chatbots", filters.sentiment !== "All sentiments", filters.segment !== "All users", filters.form !== "All submissions", filters.minMessages !== "Any", filters.scoreMin !== "" || filters.scoreMax !== "", searchMode === "semantic" && Boolean(filters.search.trim()) && Number(filters.minRelevance) !== 70].filter(Boolean).length || ""}</span></button>
+              <button className={`filter-toggle ${filtersOpen ? "is-open" : ""}`} onClick={() => setFiltersOpen((value) => !value)}><Icon name="filter" size={16} /> Filters <span className="filter-count">{[filters.country !== "All countries", filters.source !== "All sources", filters.chatbot !== "All chatbots", filters.sentiment !== "All sentiments", filters.segment !== "All users", filters.form !== "All submissions", filters.minMessages !== "Any", filters.scoreMin !== "" || filters.scoreMax !== "", searchMode === "semantic" && Boolean(filters.search.trim()) && Number(filters.minRelevance) !== 50].filter(Boolean).length || ""}</span></button>
             </div>
             {searchMode === "semantic" && semanticStatus && <div className={`semantic-status ${semanticStatus.includes("could not") || semanticStatus.includes("not configured") || semanticStatus.includes("too large") ? "has-error" : ""}`} role="status">{semanticStatus}</div>}
             {filters.date === "Custom range" && <div className="custom-date-row"><label>From<input type="date" min={minDate} max={maxDate} value={filters.from} onChange={(event) => updateFilter("from", event.target.value)} /></label><label>To<input type="date" min={minDate} max={maxDate} value={filters.to} onChange={(event) => updateFilter("to", event.target.value)} /></label></div>}
@@ -924,7 +925,7 @@ function App() {
               <SelectFilter label="User type" value={filters.segment} onChange={(value) => updateFilter("segment", value)} options={["All users", "New users", "Returning users"]} />
               <SelectFilter label="Form" value={filters.form} onChange={(value) => updateFilter("form", value)} options={["All submissions", "Submitted", "Not submitted"]} />
               <SelectFilter label="Min. user messages" value={filters.minMessages} onChange={(value) => updateFilter("minMessages", value)} options={["Any", "1", "2", "3", "5", "10"]} />
-              {searchMode === "semantic" && Boolean(filters.search.trim()) && <label className="filter-field relevance-filter"><span>Minimum relevance score</span><div className="relevance-control"><input type="range" min="0" max="100" step="5" value={filters.minRelevance} onChange={(event) => updateFilter("minRelevance", Number(event.target.value))} aria-label="Minimum semantic relevance score" /><output>{(Number(filters.minRelevance) / 100).toFixed(2)}</output></div><small>Exclude lower-scoring sessions from every dashboard section</small></label>}
+              {searchMode === "semantic" && Boolean(filters.search.trim()) && <label className="filter-field relevance-filter"><span>Minimum similarity score</span><div className="relevance-control"><input type="range" min="0" max="100" step="5" value={filters.minRelevance} onChange={(event) => updateFilter("minRelevance", Number(event.target.value))} aria-label="Minimum semantic similarity score" /><output>{(Number(filters.minRelevance) / 100).toFixed(2)}</output></div><small>Cosine similarity cutoff. Excludes lower-scoring sessions from every dashboard section.</small></label>}
               <label className="filter-field score-range-filter"><span>Confidence score (%)</span><div className="score-range-inputs"><input type="number" min="0" max="100" step="1" placeholder="Min" aria-label="Minimum confidence score" value={filters.scoreMin} onChange={(event) => updateFilter("scoreMin", event.target.value)} /><span>to</span><input type="number" min="0" max="100" step="1" placeholder="Max" aria-label="Maximum confidence score" value={filters.scoreMax} onChange={(event) => updateFilter("scoreMax", event.target.value)} /></div><small>{filters.scoreMin !== "" && filters.scoreMax !== "" && Number(filters.scoreMin) > Number(filters.scoreMax) ? "Minimum must not exceed maximum" : "Chats with an assistant response in range"}</small></label>
               <button className="reset-filters" onClick={resetFilters}>Reset filters</button>
             </div>}

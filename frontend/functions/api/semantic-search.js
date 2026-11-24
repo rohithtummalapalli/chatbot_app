@@ -105,7 +105,9 @@ export async function onRequestPost({ request, env }) {
     }
 
     const matches = [...bestByConversation.entries()]
-      .map(([id, cosine]) => ({ id, score: Math.max(0, Math.min(1, (cosine + 1) / 2)) }))
+      // Keep cosine similarity on its native scale. Shifting [-1, 1] into
+      // [0, 1] makes unrelated conversations appear more relevant than they are.
+      .map(([id, cosine]) => ({ id, score: Math.max(0, Math.min(1, cosine)) }))
       .sort((a, b) => b.score - a.score);
     return Response.json({
       matches,
